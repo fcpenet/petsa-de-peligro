@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:petsa/core/db/database.dart';
 import 'package:petsa/features/accounts/data/account_repository.dart';
@@ -65,6 +66,32 @@ void main() {
 
     await repo.setArchived(jcb, archived: false);
     expect((await repo.accounts()).single.id, jcb);
+  });
+
+  test('updateAccount renames, retypes and changes the bank', () async {
+    final id = await repo.createAccount(name: 'Card', type: AccountType.bank);
+    final rcbc = await repo.findOrCreateInstitution('RCBC');
+    await repo.updateAccount(
+      id,
+      name: ' RCBC Card ',
+      type: AccountType.creditCard,
+      institutionId: Value(rcbc),
+    );
+    final account = (await repo.accounts()).single;
+    expect(account.name, 'RCBC Card');
+    expect(account.type, AccountType.creditCard);
+    expect(account.institutionId, rcbc);
+
+    await repo.updateAccount(id, institutionId: const Value(null));
+    expect((await repo.accounts()).single.institutionId, isNull);
+    expect(() => repo.updateAccount(id, name: ' '), throwsArgumentError);
+  });
+
+  test('findOrCreateInstitution reuses names ignoring case', () async {
+    final a = await repo.findOrCreateInstitution('BPI');
+    final b = await repo.findOrCreateInstitution(' bpi ');
+    expect(b, a);
+    expect((await repo.institutions()).length, 1);
   });
 
   test('watchAccounts emits on changes', () async {

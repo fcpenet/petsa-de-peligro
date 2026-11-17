@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 
 import '../../../core/db/database.dart';
 import '../domain/budget_calculator.dart';
+import '../domain/status_planner.dart';
 
 class BudgetException implements Exception {
   BudgetException(this.message);
@@ -12,12 +13,16 @@ class BudgetException implements Exception {
 
 /// Months, incomes and expense items, including the allotted → paid cascade.
 ///
-/// Cascade rules:
+/// Cascade rules (see `status_planner.dart`):
 /// - A sub-expense's status is set directly. Its parent then becomes paid
 ///   when every sub-expense is paid, and allotted otherwise.
 /// - Setting a parent's status applies it to all its sub-expenses.
 /// - Adding an unpaid sub-expense to a paid parent makes the parent allotted.
 /// - Deleting a sub-expense re-derives the parent's status.
+///
+/// Writes that touch several rows read the affected "family" once, plan the
+/// changes in Dart, and apply them in a single atomic batch. Over Turso that
+/// is three HTTP requests regardless of how many rows change.
 class BudgetRepository {
   BudgetRepository(this._db, {DateTime Function()? clock})
     : _now = clock ?? DateTime.now;
@@ -31,20 +36,33 @@ class BudgetRepository {
       '${date.year.toString().padLeft(4, '0')}-'
       '${date.month.toString().padLeft(2, '0')}';
 
+  static final _yearMonthPattern = RegExp(r'^\d{4}-(0[1-9]|1[0-2])$');
+
+  static bool isValidYearMonth(String value) =>
+      _yearMonthPattern.hasMatch(value);
+
+  /// Returns the month for 'YYYY-MM' without creating it.
+  Future<Month?> findMonth(String yearMonth) => (_db.select(
+    _db.months,
+  )..where((m) => m.yearMonth.equals(yearMonth))).getSingleOrNull();
+
   /// Returns the month for 'YYYY-MM', creating it if needed.
-  Future<Month> ensureMonth(String yearMonth) {
-    if (!RegExp(r'^\d{4}-(0[1-9]|1[0-2])$').hasMatch(yearMonth)) {
+  Future<Month> ensureMonth(String yearMonth) async {
+    if (!isValidYearMonth(yearMonth)) {
       throw BudgetException('Invalid month "$yearMonth", expected YYYY-MM');
     }
-    return _db.transaction(() async {
-      final existing = await (_db.select(
-        _db.months,
-      )..where((m) => m.yearMonth.equals(yearMonth))).getSingleOrNull();
-      if (existing != null) return existing;
-      return _db
-          .into(_db.months)
-          .insertReturning(MonthsCompanion.insert(yearMonth: yearMonth));
-    });
+    final query = _db.select(_db.months)
+      ..where((m) => m.yearMonth.equals(yearMonth));
+    final existing = await query.getSingleOrNull();
+    if (existing != null) return existing;
+
+    await _db
+        .into(_db.months)
+        .insert(
+          MonthsCompanion.insert(yearMonth: yearMonth),
+          mode: InsertMode.insertOrIgnore,
+        );
+    return query.getSingle();
   }
 
   // --------------------------------------------------------------- incomes
@@ -56,29 +74,144 @@ class BudgetRepository {
     String? accountId,
   }) async {
     _checkAmount(amountCents);
-    final row = await _db
+    final id = newId();
+    await _db
         .into(_db.incomes)
-        .insertReturning(
+        .insert(
           IncomesCompanion.insert(
+            id: Value(id),
             monthId: monthId,
             name: name.trim(),
             amountCents: amountCents,
             accountId: Value(accountId),
+            sortOrder: Value(_nextSortOrder()),
           ),
         );
-    return row.id;
+    return id;
   }
 
-  Future<List<Income>> incomesFor(String monthId) {
-    return (_db.select(_db.incomes)
-          ..where((i) => i.monthId.equals(monthId) & i.deletedAt.isNull())
-          ..orderBy([(i) => OrderingTerm(expression: i.sortOrder)]))
-        .get();
+  Future<void> updateIncome(String id, {String? name, int? amountCents}) async {
+    if (amountCents != null) _checkAmount(amountCents);
+    final updated =
+        await (_db.update(
+          _db.incomes,
+        )..where((i) => i.id.equals(id) & i.deletedAt.isNull())).write(
+          IncomesCompanion(
+            name: name == null ? const Value.absent() : Value(name.trim()),
+            amountCents: Value.absentIfNull(amountCents),
+            updatedAt: Value(_now()),
+          ),
+        );
+    if (updated == 0) throw BudgetException('Income $id not found');
+  }
+
+  Future<void> deleteIncome(String id) async {
+    final now = _now();
+    await (_db.update(_db.incomes)..where((i) => i.id.equals(id))).write(
+      IncomesCompanion(deletedAt: Value(now), updatedAt: Value(now)),
+    );
+  }
+
+  SimpleSelectStatement<$IncomesTable, Income> _incomesQuery(String monthId) =>
+      _db.select(_db.incomes)
+        ..where((i) => i.monthId.equals(monthId) & i.deletedAt.isNull())
+        ..orderBy([(i) => OrderingTerm(expression: i.sortOrder)]);
+
+  Future<List<Income>> incomesFor(String monthId) =>
+      _incomesQuery(monthId).get();
+
+  Stream<List<Income>> watchIncomes(String monthId) =>
+      _incomesQuery(monthId).watch();
+
+  // ---------------------------------------------------------------- top-ups
+
+  /// Records money that actually arrived for an income.
+  Future<String> addTopUp({
+    required String incomeId,
+    required int amountCents,
+    required DateTime receivedAt,
+    String? note,
+  }) async {
+    _checkTopUp(amountCents);
+    final income =
+        await (_db.select(_db.incomes)
+              ..where((i) => i.id.equals(incomeId) & i.deletedAt.isNull()))
+            .getSingleOrNull();
+    if (income == null) throw BudgetException('Income $incomeId not found');
+    final id = newId();
+    await _db
+        .into(_db.incomeTopUps)
+        .insert(
+          IncomeTopUpsCompanion.insert(
+            id: Value(id),
+            incomeId: incomeId,
+            amountCents: amountCents,
+            receivedAt: receivedAt,
+            note: Value(_cleanNote(note)),
+          ),
+        );
+    return id;
+  }
+
+  Future<void> updateTopUp(
+    String id, {
+    int? amountCents,
+    DateTime? receivedAt,
+    Value<String?> note = const Value.absent(),
+  }) async {
+    if (amountCents != null) _checkTopUp(amountCents);
+    final updated =
+        await (_db.update(
+          _db.incomeTopUps,
+        )..where((t) => t.id.equals(id) & t.deletedAt.isNull())).write(
+          IncomeTopUpsCompanion(
+            amountCents: Value.absentIfNull(amountCents),
+            receivedAt: Value.absentIfNull(receivedAt),
+            note: note.present ? Value(_cleanNote(note.value)) : note,
+            updatedAt: Value(_now()),
+          ),
+        );
+    if (updated == 0) throw BudgetException('Top-up $id not found');
+  }
+
+  Future<void> deleteTopUp(String id) async {
+    final now = _now();
+    await (_db.update(_db.incomeTopUps)..where((t) => t.id.equals(id))).write(
+      IncomeTopUpsCompanion(deletedAt: Value(now), updatedAt: Value(now)),
+    );
+  }
+
+  /// Top-ups of the month's live incomes, oldest first.
+  Selectable<TopUp> _topUpsQuery(String monthId) {
+    final t = _db.incomeTopUps;
+    final i = _db.incomes;
+    final query = _db.select(t).join([innerJoin(i, i.id.equalsExp(t.incomeId))])
+      ..where(
+        i.monthId.equals(monthId) & i.deletedAt.isNull() & t.deletedAt.isNull(),
+      )
+      ..orderBy([OrderingTerm(expression: t.receivedAt)]);
+    return query.map((row) => row.readTable(t));
+  }
+
+  Future<List<TopUp>> topUpsFor(String monthId) => _topUpsQuery(monthId).get();
+
+  Stream<List<TopUp>> watchTopUps(String monthId) =>
+      _topUpsQuery(monthId).watch();
+
+  void _checkTopUp(int cents) {
+    if (cents <= 0) throw BudgetException('A top-up must be more than zero');
+  }
+
+  String? _cleanNote(String? note) {
+    final trimmed = note?.trim() ?? '';
+    return trimmed.isEmpty ? null : trimmed;
   }
 
   // ----------------------------------------------------------------- items
 
-  /// Adds an expense, or a sub-expense when [parentId] is given.
+  /// Adds an expense, or a sub-expense of the collection [parentId].
+  /// With [isCollection] the expense holds sub-expenses and [amountCents]
+  /// is its budget.
   Future<String> addItem({
     required String monthId,
     required String name,
@@ -88,38 +221,55 @@ class BudgetRepository {
     ItemKind kind = ItemKind.expense,
     int? dueDay,
     String? note,
-    int sortOrder = 0,
-  }) {
+    int? sortOrder,
+    bool isCollection = false,
+  }) async {
     _checkAmount(amountCents);
     _checkDueDay(dueDay);
-    return _db.transaction(() async {
-      if (parentId != null) {
-        final parent = await _liveItem(parentId);
-        if (parent.parentId != null) {
-          throw BudgetException('Sub-expenses cannot have sub-expenses');
-        }
-        if (parent.monthId != monthId) {
-          throw BudgetException('Sub-expense must be in the same month');
-        }
-      }
-      final row = await _db
-          .into(_db.items)
-          .insertReturning(
-            ItemsCompanion.insert(
-              monthId: monthId,
-              name: name.trim(),
-              amountCents: amountCents,
-              accountId: Value(accountId),
-              parentId: Value(parentId),
-              kind: Value(kind),
-              dueDay: Value(dueDay),
-              note: Value(note),
-              sortOrder: Value(sortOrder),
-            ),
-          );
-      if (parentId != null) await _rederiveParent(parentId);
-      return row.id;
+    if (isCollection && parentId != null) {
+      throw BudgetException('A collection cannot be a sub-expense');
+    }
+    final id = newId();
+    final row = ItemsCompanion.insert(
+      id: Value(id),
+      monthId: monthId,
+      name: name.trim(),
+      amountCents: amountCents,
+      accountId: Value(accountId),
+      parentId: Value(parentId),
+      kind: Value(kind),
+      dueDay: Value(dueDay),
+      note: Value(note),
+      sortOrder: Value(sortOrder ?? _nextSortOrder()),
+      isCollection: Value(isCollection),
+    );
+
+    if (parentId == null) {
+      await _db.into(_db.items).insert(row);
+      return id;
+    }
+
+    final family = await _family(parentId);
+    final parent = family[parentId];
+    if (parent == null) throw BudgetException('Item $parentId not found');
+    _checkCollection(parent);
+    if (parent.monthId != monthId) {
+      throw BudgetException('Sub-expense must be in the same month');
+    }
+
+    // The new child starts allotted, which can only revert a paid parent.
+    final now = _now();
+    final newChild = _placeholderItem(id, monthId, parentId, now);
+    final patch = planParentRederive(
+      ItemFamily([...family.childrenOf(parentId), parent, newChild]),
+      parentId,
+      now: now,
+    );
+    await _db.batch((b) {
+      b.insert(_db.items, row);
+      if (patch != null) _writePatch(b, parentId, patch, now);
     });
+    return id;
   }
 
   /// Edits an item's details. Status changes go through [setStatus].
@@ -131,21 +281,101 @@ class BudgetRepository {
     ItemKind? kind,
     Value<int?> dueDay = const Value.absent(),
     Value<String?> note = const Value.absent(),
+    bool? isCollection,
   }) async {
     if (amountCents != null) _checkAmount(amountCents);
     if (dueDay.present) _checkDueDay(dueDay.value);
-    await _liveItem(id);
-    await (_db.update(_db.items)..where((i) => i.id.equals(id))).write(
-      ItemsCompanion(
-        name: name == null ? const Value.absent() : Value(name.trim()),
-        amountCents: Value.absentIfNull(amountCents),
-        accountId: accountId,
-        kind: Value.absentIfNull(kind),
-        dueDay: dueDay,
-        note: note,
-        updatedAt: Value(_now()),
-      ),
-    );
+    if (isCollection != null) {
+      final family = await _family(id);
+      final item = family[id];
+      if (item == null) throw BudgetException('Item $id not found');
+      if (isCollection && item.parentId != null) {
+        throw BudgetException('A sub-expense cannot be a collection');
+      }
+      if (!isCollection && family.childrenOf(id).isNotEmpty) {
+        throw BudgetException(
+          'Move or delete its sub-expenses before turning off Collection',
+        );
+      }
+    }
+    final updated =
+        await (_db.update(
+          _db.items,
+        )..where((i) => i.id.equals(id) & i.deletedAt.isNull())).write(
+          ItemsCompanion(
+            name: name == null ? const Value.absent() : Value(name.trim()),
+            amountCents: Value.absentIfNull(amountCents),
+            accountId: accountId,
+            kind: Value.absentIfNull(kind),
+            dueDay: dueDay,
+            note: note,
+            isCollection: Value.absentIfNull(isCollection),
+            updatedAt: Value(_now()),
+          ),
+        );
+    if (updated == 0) throw BudgetException('Item $id not found');
+  }
+
+  /// Moves an item into a collection ([parentId]) or out of it (null). Both
+  /// the old and new collection's statuses are re-derived.
+  Future<void> setParent(String id, String? parentId) async {
+    if (parentId == id) throw BudgetException('An item cannot contain itself');
+    final now = _now();
+    final (family, target) = await (
+      _family(id),
+      parentId == null ? Future.value(null) : _family(parentId),
+    ).wait;
+    final item = family[id];
+    if (item == null) throw BudgetException('Item $id not found');
+    if (item.parentId == parentId) return;
+
+    BudgetItem? newParent;
+    if (parentId != null) {
+      newParent = target?[parentId];
+      if (newParent == null) throw BudgetException('Collection not found');
+      _checkCollection(newParent);
+      if (newParent.monthId != item.monthId) {
+        throw BudgetException('Sub-expense must be in the same month');
+      }
+      if (item.isCollection || family.childrenOf(id).isNotEmpty) {
+        throw BudgetException(
+          'A collection cannot go inside another collection',
+        );
+      }
+    }
+
+    final oldParentId = item.parentId;
+    final oldPatch = oldParentId == null
+        ? null
+        : planParentRederive(
+            ItemFamily([
+              ...family.childrenOf(oldParentId).where((c) => c.id != id),
+              ?family[oldParentId],
+            ]),
+            oldParentId,
+            now: now,
+          );
+    final newPatch = parentId == null
+        ? null
+        : planParentRederive(
+            ItemFamily([
+              ...target!.childrenOf(parentId),
+              newParent!,
+              item.copyWith(parentId: Value(parentId)),
+            ]),
+            parentId,
+            now: now,
+          );
+
+    await _db.batch((b) {
+      b.update(
+        _db.items,
+        ItemsCompanion(parentId: Value(parentId), updatedAt: Value(now)),
+        where: (i) => i.id.equals(id),
+      );
+      if (oldPatch != null) _writePatch(b, oldParentId!, oldPatch, now);
+      if (newPatch != null) _writePatch(b, parentId!, newPatch, now);
+    });
   }
 
   /// Marks an item allotted or paid and cascades to its parent/sub-expenses.
@@ -153,76 +383,81 @@ class BudgetRepository {
   /// [paidAt] is the date the payment was made (e.g. when a credit card item
   /// was settled); it defaults to now. Sub-expenses that were already paid
   /// keep their original payment date when a parent is marked paid.
-  Future<void> setStatus(String id, ItemStatus status, {DateTime? paidAt}) {
-    return _db.transaction(() async {
-      final item = await _liveItem(id);
-      final now = _now();
-      final payDate = paidAt ?? now;
-      final children = await _liveChildren(id);
+  Future<void> setStatus(
+    String id,
+    ItemStatus status, {
+    DateTime? paidAt,
+  }) async {
+    final now = _now();
+    final family = await _family(id);
+    if (family[id] == null) throw BudgetException('Item $id not found');
 
-      if (children.isNotEmpty) {
-        final childQuery = _db.update(_db.items)
-          ..where((i) => i.parentId.equals(id) & i.deletedAt.isNull());
-        if (status == ItemStatus.paid) {
-          childQuery.where((i) => i.status.equalsValue(ItemStatus.allotted));
-          await childQuery.write(
-            ItemsCompanion(
-              status: const Value(ItemStatus.paid),
-              paidAt: Value(payDate),
-              updatedAt: Value(now),
-            ),
-          );
-        } else {
-          await childQuery.write(
-            ItemsCompanion(
-              status: const Value(ItemStatus.allotted),
-              paidAt: const Value(null),
-              updatedAt: Value(now),
-            ),
-          );
-        }
+    final patches = planStatusChange(
+      family,
+      targetId: id,
+      status: status,
+      paidAt: paidAt ?? now,
+      now: now,
+    );
+    await _db.batch((b) {
+      for (final MapEntry(key: itemId, value: patch) in patches.entries) {
+        _writePatch(b, itemId, patch, now);
       }
-
-      await _writeStatus(
-        id,
-        status,
-        status == ItemStatus.paid ? payDate : null,
-        now,
-      );
-      if (item.parentId != null) await _rederiveParent(item.parentId!);
     });
   }
 
   /// Soft-deletes an item. Deleting a parent also deletes its sub-expenses.
-  Future<void> deleteItem(String id) {
-    return _db.transaction(() async {
-      final item = await _liveItem(id);
-      final now = _now();
-      await (_db.update(_db.items)..where(
-            (i) => (i.id.equals(id) | i.parentId.equals(id)) &
-                i.deletedAt.isNull(),
-          ))
-          .write(ItemsCompanion(deletedAt: Value(now), updatedAt: Value(now)));
-      if (item.parentId != null) await _rederiveParent(item.parentId!);
+  Future<void> deleteItem(String id) async {
+    final now = _now();
+    final family = await _family(id);
+    final item = family[id];
+    if (item == null) throw BudgetException('Item $id not found');
+
+    final parentId = item.parentId;
+    StatusPatch? parentPatch;
+    if (parentId != null) {
+      final remaining = family.childrenOf(parentId).where((c) => c.id != id);
+      parentPatch = planParentRederive(
+        ItemFamily([...remaining, ?family[parentId]]),
+        parentId,
+        now: now,
+      );
+    }
+
+    await _db.batch((b) {
+      b.update(
+        _db.items,
+        ItemsCompanion(deletedAt: Value(now), updatedAt: Value(now)),
+        where: (i) =>
+            (i.id.equals(id) | i.parentId.equals(id)) & i.deletedAt.isNull(),
+      );
+      if (parentId != null && parentPatch != null) {
+        _writePatch(b, parentId, parentPatch, now);
+      }
     });
   }
 
-  Future<List<BudgetItem>> itemsFor(String monthId) => _itemsQuery(monthId).get();
+  Future<List<BudgetItem>> itemsFor(String monthId) =>
+      _itemsQuery(monthId).get();
 
   Stream<List<BudgetItem>> watchItems(String monthId) =>
       _itemsQuery(monthId).watch();
 
-  Future<BudgetItem> item(String id) => _liveItem(id);
+  Future<BudgetItem> item(String id) async {
+    final item = await (_db.select(
+      _db.items,
+    )..where((i) => i.id.equals(id) & i.deletedAt.isNull())).getSingleOrNull();
+    if (item == null) throw BudgetException('Item $id not found');
+    return item;
+  }
 
   Future<MonthTotals> totalsFor(String monthId) async {
-    final results = await Future.wait([
+    final (items, incomes, topUps) = await (
       itemsFor(monthId),
       incomesFor(monthId),
-    ]);
-    return computeMonthTotals(
-      items: results[0] as List<BudgetItem>,
-      incomes: results[1] as List<Income>,
-    );
+      topUpsFor(monthId),
+    ).wait;
+    return computeMonthTotals(items: items, incomes: incomes, topUps: topUps);
   }
 
   // --------------------------------------------------------------- helpers
@@ -236,53 +471,64 @@ class BudgetRepository {
       ]);
   }
 
-  Future<BudgetItem> _liveItem(String id) async {
-    final item = await (_db.select(
+  /// One query: the item, its children, its parent and its siblings.
+  Future<ItemFamily> _family(String id) async {
+    final rows = await _db
+        .customSelect(
+          'SELECT * FROM items WHERE deleted_at IS NULL AND ('
+          '  id = ?1 OR parent_id = ?1'
+          '  OR id = (SELECT parent_id FROM items WHERE id = ?1)'
+          '  OR parent_id = (SELECT parent_id FROM items WHERE id = ?1)'
+          ')',
+          variables: [Variable.withString(id)],
+          readsFrom: {_db.items},
+        )
+        .get();
+    return ItemFamily(rows.map((r) => _db.items.map(r.data)));
+  }
+
+  void _writePatch(Batch b, String id, StatusPatch patch, DateTime now) {
+    b.update(
       _db.items,
-    )..where((i) => i.id.equals(id) & i.deletedAt.isNull())).getSingleOrNull();
-    if (item == null) throw BudgetException('Item $id not found');
-    return item;
-  }
-
-  Future<List<BudgetItem>> _liveChildren(String parentId) {
-    return (_db.select(
-      _db.items,
-    )..where((i) => i.parentId.equals(parentId) & i.deletedAt.isNull())).get();
-  }
-
-  /// Recomputes a parent's status from its sub-expenses. A parent left with
-  /// no sub-expenses keeps its current status.
-  Future<void> _rederiveParent(String parentId) async {
-    final parent = await _liveItem(parentId);
-    final children = await _liveChildren(parentId);
-    final derived = deriveParentStatus(children.map((c) => c.status));
-    if (derived == null) return;
-
-    DateTime? paidAt;
-    if (derived == ItemStatus.paid) {
-      // The parent counts as paid on the date its last sub-expense was paid.
-      paidAt = children
-          .map((c) => c.paidAt ?? _now())
-          .reduce((a, b) => a.isAfter(b) ? a : b);
-    }
-    if (parent.status == derived && parent.paidAt == paidAt) return;
-    await _writeStatus(parentId, derived, paidAt, _now());
-  }
-
-  Future<void> _writeStatus(
-    String id,
-    ItemStatus status,
-    DateTime? paidAt,
-    DateTime now,
-  ) {
-    return (_db.update(_db.items)..where((i) => i.id.equals(id))).write(
       ItemsCompanion(
-        status: Value(status),
-        paidAt: Value(paidAt),
+        status: Value(patch.status),
+        paidAt: Value(patch.paidAt),
         updatedAt: Value(now),
       ),
+      where: (i) => i.id.equals(id),
     );
   }
+
+  /// Stand-in for a just-inserted sub-expense when planning the cascade.
+  BudgetItem _placeholderItem(
+    String id,
+    String monthId,
+    String parentId,
+    DateTime now,
+  ) => BudgetItem(
+    id: id,
+    updatedAt: now,
+    monthId: monthId,
+    parentId: parentId,
+    name: '',
+    amountCents: 0,
+    kind: ItemKind.expense,
+    status: ItemStatus.allotted,
+    sortOrder: 0,
+    isCollection: false,
+  );
+
+  void _checkCollection(BudgetItem parent) {
+    if (parent.parentId != null) {
+      throw BudgetException('Sub-expenses cannot have sub-expenses');
+    }
+    if (!parent.isCollection) {
+      throw BudgetException('“${parent.name}” is not a collection');
+    }
+  }
+
+  /// New rows go last: seconds since epoch keep insertion order.
+  int _nextSortOrder() => _now().millisecondsSinceEpoch ~/ 1000;
 
   void _checkAmount(int cents) {
     if (cents < 0) throw BudgetException('Amount cannot be negative');

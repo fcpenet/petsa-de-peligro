@@ -46,3 +46,7 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Local secrets (Turso URL/token)
+.env.local
+.env.test.local

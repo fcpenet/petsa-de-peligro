@@ -19,6 +19,20 @@ class AccountRepository {
     return row.id;
   }
 
+  /// Returns the institution with this name (case-insensitive), creating it
+  /// when it doesn't exist yet.
+  Future<String> findOrCreateInstitution(String name) async {
+    final trimmed = name.trim();
+    final existing =
+        await (_db.select(_db.institutions)..where(
+              (i) =>
+                  i.name.lower().equals(trimmed.toLowerCase()) &
+                  i.deletedAt.isNull(),
+            ))
+            .getSingleOrNull();
+    return existing?.id ?? createInstitution(trimmed);
+  }
+
   Future<String> createAccount({
     required String name,
     required AccountType type,
@@ -38,23 +52,45 @@ class AccountRepository {
     return row.id;
   }
 
-  /// Archived accounts stay attached to past items but are hidden from pickers.
-  Future<void> setArchived(String accountId, {required bool archived}) {
-    return (_db.update(_db.accounts)..where((a) => a.id.equals(accountId)))
-        .write(
-          AccountsCompanion(
-            archived: Value(archived),
-            updatedAt: Value(DateTime.now()),
-          ),
-        );
+  Future<void> updateAccount(
+    String id, {
+    String? name,
+    AccountType? type,
+    Value<String?> institutionId = const Value.absent(),
+  }) {
+    if (name != null && name.trim().isEmpty) {
+      throw ArgumentError.value(name, 'name', 'cannot be empty');
+    }
+    return (_db.update(_db.accounts)..where((a) => a.id.equals(id))).write(
+      AccountsCompanion(
+        name: name == null ? const Value.absent() : Value(name.trim()),
+        type: Value.absentIfNull(type),
+        institutionId: institutionId,
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
   }
 
-  Future<List<Institution>> institutions() {
-    return (_db.select(_db.institutions)
-          ..where((i) => i.deletedAt.isNull())
-          ..orderBy([(i) => OrderingTerm(expression: i.sortOrder)]))
-        .get();
+  /// Archived accounts stay attached to past items but are hidden from pickers.
+  Future<void> setArchived(String accountId, {required bool archived}) {
+    return (_db.update(
+      _db.accounts,
+    )..where((a) => a.id.equals(accountId))).write(
+      AccountsCompanion(
+        archived: Value(archived),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
   }
+
+  SimpleSelectStatement<$InstitutionsTable, Institution> _institutions() =>
+      _db.select(_db.institutions)
+        ..where((i) => i.deletedAt.isNull())
+        ..orderBy([(i) => OrderingTerm(expression: i.sortOrder)]);
+
+  Future<List<Institution>> institutions() => _institutions().get();
+
+  Stream<List<Institution>> watchInstitutions() => _institutions().watch();
 
   SimpleSelectStatement<$AccountsTable, Account> _activeAccounts({
     bool includeArchived = false,

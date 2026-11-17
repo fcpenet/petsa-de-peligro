@@ -1,24 +1,49 @@
 import 'package:drift/drift.dart';
-import 'package:drift_flutter/drift_flutter.dart';
 
+import 'connection.dart';
 import 'tables.dart';
 
 export 'tables.dart';
 
 part 'database.g.dart';
 
-@DriftDatabase(tables: [Institutions, Accounts, Months, Incomes, Items])
+@DriftDatabase(
+  tables: [
+    Institutions,
+    Accounts,
+    Months,
+    Incomes,
+    IncomeTopUps,
+    Items,
+    Templates,
+  ],
+)
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.executor);
 
-  /// The on-device database used by the app.
-  factory AppDatabase.open() => AppDatabase(driftDatabase(name: 'petsa'));
+  /// Turso when configured at build time, otherwise on-device SQLite.
+  factory AppDatabase.open() => AppDatabase(defaultExecutor());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
+    onCreate: (m) => m.createAll(),
+    onUpgrade: (m, from, to) async {
+      if (from < 2) await m.createTable(templates);
+      if (from < 3) await m.createTable(incomeTopUps);
+      if (from < 4) {
+        await m.addColumn(items, items.isCollection);
+        // Groups (top-level, no account) and anything with sub-expenses
+        // become collections.
+        await customStatement(
+          'UPDATE items SET is_collection = 1 '
+          'WHERE (parent_id IS NULL AND account_id IS NULL) '
+          'OR id IN (SELECT parent_id FROM items WHERE parent_id IS NOT NULL)',
+        );
+      }
+    },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');
     },

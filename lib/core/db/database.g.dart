@@ -1716,6 +1716,474 @@ class IncomesCompanion extends UpdateCompanion<Income> {
   }
 }
 
+class $IncomeTopUpsTable extends IncomeTopUps
+    with TableInfo<$IncomeTopUpsTable, TopUp> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $IncomeTopUpsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    clientDefault: newId,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    clientDefault: DateTime.now,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _incomeIdMeta = const VerificationMeta(
+    'incomeId',
+  );
+  @override
+  late final GeneratedColumn<String> incomeId = GeneratedColumn<String>(
+    'income_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES incomes (id)',
+    ),
+  );
+  static const VerificationMeta _amountCentsMeta = const VerificationMeta(
+    'amountCents',
+  );
+  @override
+  late final GeneratedColumn<int> amountCents = GeneratedColumn<int>(
+    'amount_cents',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _receivedAtMeta = const VerificationMeta(
+    'receivedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> receivedAt = GeneratedColumn<DateTime>(
+    'received_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _noteMeta = const VerificationMeta('note');
+  @override
+  late final GeneratedColumn<String> note = GeneratedColumn<String>(
+    'note',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    updatedAt,
+    deletedAt,
+    incomeId,
+    amountCents,
+    receivedAt,
+    note,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'income_top_ups';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<TopUp> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
+    if (data.containsKey('income_id')) {
+      context.handle(
+        _incomeIdMeta,
+        incomeId.isAcceptableOrUnknown(data['income_id']!, _incomeIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_incomeIdMeta);
+    }
+    if (data.containsKey('amount_cents')) {
+      context.handle(
+        _amountCentsMeta,
+        amountCents.isAcceptableOrUnknown(
+          data['amount_cents']!,
+          _amountCentsMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_amountCentsMeta);
+    }
+    if (data.containsKey('received_at')) {
+      context.handle(
+        _receivedAtMeta,
+        receivedAt.isAcceptableOrUnknown(data['received_at']!, _receivedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_receivedAtMeta);
+    }
+    if (data.containsKey('note')) {
+      context.handle(
+        _noteMeta,
+        note.isAcceptableOrUnknown(data['note']!, _noteMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  TopUp map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return TopUp(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      ),
+      incomeId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}income_id'],
+      )!,
+      amountCents: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}amount_cents'],
+      )!,
+      receivedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}received_at'],
+      )!,
+      note: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}note'],
+      ),
+    );
+  }
+
+  @override
+  $IncomeTopUpsTable createAlias(String alias) {
+    return $IncomeTopUpsTable(attachedDatabase, alias);
+  }
+}
+
+class TopUp extends DataClass implements Insertable<TopUp> {
+  final String id;
+  final DateTime updatedAt;
+  final DateTime? deletedAt;
+  final String incomeId;
+  final int amountCents;
+  final DateTime receivedAt;
+  final String? note;
+  const TopUp({
+    required this.id,
+    required this.updatedAt,
+    this.deletedAt,
+    required this.incomeId,
+    required this.amountCents,
+    required this.receivedAt,
+    this.note,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt);
+    }
+    map['income_id'] = Variable<String>(incomeId);
+    map['amount_cents'] = Variable<int>(amountCents);
+    map['received_at'] = Variable<DateTime>(receivedAt);
+    if (!nullToAbsent || note != null) {
+      map['note'] = Variable<String>(note);
+    }
+    return map;
+  }
+
+  IncomeTopUpsCompanion toCompanion(bool nullToAbsent) {
+    return IncomeTopUpsCompanion(
+      id: Value(id),
+      updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+      incomeId: Value(incomeId),
+      amountCents: Value(amountCents),
+      receivedAt: Value(receivedAt),
+      note: note == null && nullToAbsent ? const Value.absent() : Value(note),
+    );
+  }
+
+  factory TopUp.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return TopUp(
+      id: serializer.fromJson<String>(json['id']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
+      incomeId: serializer.fromJson<String>(json['incomeId']),
+      amountCents: serializer.fromJson<int>(json['amountCents']),
+      receivedAt: serializer.fromJson<DateTime>(json['receivedAt']),
+      note: serializer.fromJson<String?>(json['note']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
+      'incomeId': serializer.toJson<String>(incomeId),
+      'amountCents': serializer.toJson<int>(amountCents),
+      'receivedAt': serializer.toJson<DateTime>(receivedAt),
+      'note': serializer.toJson<String?>(note),
+    };
+  }
+
+  TopUp copyWith({
+    String? id,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
+    String? incomeId,
+    int? amountCents,
+    DateTime? receivedAt,
+    Value<String?> note = const Value.absent(),
+  }) => TopUp(
+    id: id ?? this.id,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    incomeId: incomeId ?? this.incomeId,
+    amountCents: amountCents ?? this.amountCents,
+    receivedAt: receivedAt ?? this.receivedAt,
+    note: note.present ? note.value : this.note,
+  );
+  TopUp copyWithCompanion(IncomeTopUpsCompanion data) {
+    return TopUp(
+      id: data.id.present ? data.id.value : this.id,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      incomeId: data.incomeId.present ? data.incomeId.value : this.incomeId,
+      amountCents: data.amountCents.present
+          ? data.amountCents.value
+          : this.amountCents,
+      receivedAt: data.receivedAt.present
+          ? data.receivedAt.value
+          : this.receivedAt,
+      note: data.note.present ? data.note.value : this.note,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TopUp(')
+          ..write('id: $id, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('incomeId: $incomeId, ')
+          ..write('amountCents: $amountCents, ')
+          ..write('receivedAt: $receivedAt, ')
+          ..write('note: $note')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    updatedAt,
+    deletedAt,
+    incomeId,
+    amountCents,
+    receivedAt,
+    note,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is TopUp &&
+          other.id == this.id &&
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt &&
+          other.incomeId == this.incomeId &&
+          other.amountCents == this.amountCents &&
+          other.receivedAt == this.receivedAt &&
+          other.note == this.note);
+}
+
+class IncomeTopUpsCompanion extends UpdateCompanion<TopUp> {
+  final Value<String> id;
+  final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
+  final Value<String> incomeId;
+  final Value<int> amountCents;
+  final Value<DateTime> receivedAt;
+  final Value<String?> note;
+  final Value<int> rowid;
+  const IncomeTopUpsCompanion({
+    this.id = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.incomeId = const Value.absent(),
+    this.amountCents = const Value.absent(),
+    this.receivedAt = const Value.absent(),
+    this.note = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  IncomeTopUpsCompanion.insert({
+    this.id = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    required String incomeId,
+    required int amountCents,
+    required DateTime receivedAt,
+    this.note = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : incomeId = Value(incomeId),
+       amountCents = Value(amountCents),
+       receivedAt = Value(receivedAt);
+  static Insertable<TopUp> custom({
+    Expression<String>? id,
+    Expression<DateTime>? updatedAt,
+    Expression<DateTime>? deletedAt,
+    Expression<String>? incomeId,
+    Expression<int>? amountCents,
+    Expression<DateTime>? receivedAt,
+    Expression<String>? note,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (incomeId != null) 'income_id': incomeId,
+      if (amountCents != null) 'amount_cents': amountCents,
+      if (receivedAt != null) 'received_at': receivedAt,
+      if (note != null) 'note': note,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  IncomeTopUpsCompanion copyWith({
+    Value<String>? id,
+    Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
+    Value<String>? incomeId,
+    Value<int>? amountCents,
+    Value<DateTime>? receivedAt,
+    Value<String?>? note,
+    Value<int>? rowid,
+  }) {
+    return IncomeTopUpsCompanion(
+      id: id ?? this.id,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      incomeId: incomeId ?? this.incomeId,
+      amountCents: amountCents ?? this.amountCents,
+      receivedAt: receivedAt ?? this.receivedAt,
+      note: note ?? this.note,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
+    }
+    if (incomeId.present) {
+      map['income_id'] = Variable<String>(incomeId.value);
+    }
+    if (amountCents.present) {
+      map['amount_cents'] = Variable<int>(amountCents.value);
+    }
+    if (receivedAt.present) {
+      map['received_at'] = Variable<DateTime>(receivedAt.value);
+    }
+    if (note.present) {
+      map['note'] = Variable<String>(note.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('IncomeTopUpsCompanion(')
+          ..write('id: $id, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('incomeId: $incomeId, ')
+          ..write('amountCents: $amountCents, ')
+          ..write('receivedAt: $receivedAt, ')
+          ..write('note: $note, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $ItemsTable extends Items with TableInfo<$ItemsTable, BudgetItem> {
   @override
   final GeneratedDatabase attachedDatabase;
@@ -1879,6 +2347,21 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, BudgetItem> {
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _isCollectionMeta = const VerificationMeta(
+    'isCollection',
+  );
+  @override
+  late final GeneratedColumn<bool> isCollection = GeneratedColumn<bool>(
+    'is_collection',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_collection" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -1895,6 +2378,7 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, BudgetItem> {
     dueDay,
     note,
     sortOrder,
+    isCollection,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1986,6 +2470,15 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, BudgetItem> {
         sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
       );
     }
+    if (data.containsKey('is_collection')) {
+      context.handle(
+        _isCollectionMeta,
+        isCollection.isAcceptableOrUnknown(
+          data['is_collection']!,
+          _isCollectionMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -2055,6 +2548,10 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, BudgetItem> {
         DriftSqlType.int,
         data['${effectivePrefix}sort_order'],
       )!,
+      isCollection: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_collection'],
+      )!,
     );
   }
 
@@ -2084,6 +2581,7 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
   final int? dueDay;
   final String? note;
   final int sortOrder;
+  final bool isCollection;
   const BudgetItem({
     required this.id,
     required this.updatedAt,
@@ -2099,6 +2597,7 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
     this.dueDay,
     this.note,
     required this.sortOrder,
+    required this.isCollection,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2135,6 +2634,7 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
       map['note'] = Variable<String>(note);
     }
     map['sort_order'] = Variable<int>(sortOrder);
+    map['is_collection'] = Variable<bool>(isCollection);
     return map;
   }
 
@@ -2164,6 +2664,7 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
           : Value(dueDay),
       note: note == null && nullToAbsent ? const Value.absent() : Value(note),
       sortOrder: Value(sortOrder),
+      isCollection: Value(isCollection),
     );
   }
 
@@ -2191,6 +2692,7 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
       dueDay: serializer.fromJson<int?>(json['dueDay']),
       note: serializer.fromJson<String?>(json['note']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      isCollection: serializer.fromJson<bool>(json['isCollection']),
     );
   }
   @override
@@ -2215,6 +2717,7 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
       'dueDay': serializer.toJson<int?>(dueDay),
       'note': serializer.toJson<String?>(note),
       'sortOrder': serializer.toJson<int>(sortOrder),
+      'isCollection': serializer.toJson<bool>(isCollection),
     };
   }
 
@@ -2233,6 +2736,7 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
     Value<int?> dueDay = const Value.absent(),
     Value<String?> note = const Value.absent(),
     int? sortOrder,
+    bool? isCollection,
   }) => BudgetItem(
     id: id ?? this.id,
     updatedAt: updatedAt ?? this.updatedAt,
@@ -2248,6 +2752,7 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
     dueDay: dueDay.present ? dueDay.value : this.dueDay,
     note: note.present ? note.value : this.note,
     sortOrder: sortOrder ?? this.sortOrder,
+    isCollection: isCollection ?? this.isCollection,
   );
   BudgetItem copyWithCompanion(ItemsCompanion data) {
     return BudgetItem(
@@ -2267,6 +2772,9 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
       dueDay: data.dueDay.present ? data.dueDay.value : this.dueDay,
       note: data.note.present ? data.note.value : this.note,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      isCollection: data.isCollection.present
+          ? data.isCollection.value
+          : this.isCollection,
     );
   }
 
@@ -2286,7 +2794,8 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
           ..write('paidAt: $paidAt, ')
           ..write('dueDay: $dueDay, ')
           ..write('note: $note, ')
-          ..write('sortOrder: $sortOrder')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('isCollection: $isCollection')
           ..write(')'))
         .toString();
   }
@@ -2307,6 +2816,7 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
     dueDay,
     note,
     sortOrder,
+    isCollection,
   );
   @override
   bool operator ==(Object other) =>
@@ -2325,7 +2835,8 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
           other.paidAt == this.paidAt &&
           other.dueDay == this.dueDay &&
           other.note == this.note &&
-          other.sortOrder == this.sortOrder);
+          other.sortOrder == this.sortOrder &&
+          other.isCollection == this.isCollection);
 }
 
 class ItemsCompanion extends UpdateCompanion<BudgetItem> {
@@ -2343,6 +2854,7 @@ class ItemsCompanion extends UpdateCompanion<BudgetItem> {
   final Value<int?> dueDay;
   final Value<String?> note;
   final Value<int> sortOrder;
+  final Value<bool> isCollection;
   final Value<int> rowid;
   const ItemsCompanion({
     this.id = const Value.absent(),
@@ -2359,6 +2871,7 @@ class ItemsCompanion extends UpdateCompanion<BudgetItem> {
     this.dueDay = const Value.absent(),
     this.note = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.isCollection = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ItemsCompanion.insert({
@@ -2376,6 +2889,7 @@ class ItemsCompanion extends UpdateCompanion<BudgetItem> {
     this.dueDay = const Value.absent(),
     this.note = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.isCollection = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : monthId = Value(monthId),
        name = Value(name),
@@ -2395,6 +2909,7 @@ class ItemsCompanion extends UpdateCompanion<BudgetItem> {
     Expression<int>? dueDay,
     Expression<String>? note,
     Expression<int>? sortOrder,
+    Expression<bool>? isCollection,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2412,6 +2927,7 @@ class ItemsCompanion extends UpdateCompanion<BudgetItem> {
       if (dueDay != null) 'due_day': dueDay,
       if (note != null) 'note': note,
       if (sortOrder != null) 'sort_order': sortOrder,
+      if (isCollection != null) 'is_collection': isCollection,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2431,6 +2947,7 @@ class ItemsCompanion extends UpdateCompanion<BudgetItem> {
     Value<int?>? dueDay,
     Value<String?>? note,
     Value<int>? sortOrder,
+    Value<bool>? isCollection,
     Value<int>? rowid,
   }) {
     return ItemsCompanion(
@@ -2448,6 +2965,7 @@ class ItemsCompanion extends UpdateCompanion<BudgetItem> {
       dueDay: dueDay ?? this.dueDay,
       note: note ?? this.note,
       sortOrder: sortOrder ?? this.sortOrder,
+      isCollection: isCollection ?? this.isCollection,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2501,6 +3019,9 @@ class ItemsCompanion extends UpdateCompanion<BudgetItem> {
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
     }
+    if (isCollection.present) {
+      map['is_collection'] = Variable<bool>(isCollection.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2524,6 +3045,368 @@ class ItemsCompanion extends UpdateCompanion<BudgetItem> {
           ..write('dueDay: $dueDay, ')
           ..write('note: $note, ')
           ..write('sortOrder: $sortOrder, ')
+          ..write('isCollection: $isCollection, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $TemplatesTable extends Templates
+    with TableInfo<$TemplatesTable, TemplateRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $TemplatesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    clientDefault: newId,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    clientDefault: DateTime.now,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    additionalChecks: GeneratedColumn.checkTextLength(
+      minTextLength: 1,
+      maxTextLength: 80,
+    ),
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _payloadMeta = const VerificationMeta(
+    'payload',
+  );
+  @override
+  late final GeneratedColumn<String> payload = GeneratedColumn<String>(
+    'payload',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    updatedAt,
+    deletedAt,
+    name,
+    payload,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'templates';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<TemplateRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('payload')) {
+      context.handle(
+        _payloadMeta,
+        payload.isAcceptableOrUnknown(data['payload']!, _payloadMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_payloadMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  TemplateRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return TemplateRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      ),
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      payload: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}payload'],
+      )!,
+    );
+  }
+
+  @override
+  $TemplatesTable createAlias(String alias) {
+    return $TemplatesTable(attachedDatabase, alias);
+  }
+}
+
+class TemplateRow extends DataClass implements Insertable<TemplateRow> {
+  final String id;
+  final DateTime updatedAt;
+  final DateTime? deletedAt;
+  final String name;
+  final String payload;
+  const TemplateRow({
+    required this.id,
+    required this.updatedAt,
+    this.deletedAt,
+    required this.name,
+    required this.payload,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt);
+    }
+    map['name'] = Variable<String>(name);
+    map['payload'] = Variable<String>(payload);
+    return map;
+  }
+
+  TemplatesCompanion toCompanion(bool nullToAbsent) {
+    return TemplatesCompanion(
+      id: Value(id),
+      updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+      name: Value(name),
+      payload: Value(payload),
+    );
+  }
+
+  factory TemplateRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return TemplateRow(
+      id: serializer.fromJson<String>(json['id']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
+      name: serializer.fromJson<String>(json['name']),
+      payload: serializer.fromJson<String>(json['payload']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
+      'name': serializer.toJson<String>(name),
+      'payload': serializer.toJson<String>(payload),
+    };
+  }
+
+  TemplateRow copyWith({
+    String? id,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
+    String? name,
+    String? payload,
+  }) => TemplateRow(
+    id: id ?? this.id,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    name: name ?? this.name,
+    payload: payload ?? this.payload,
+  );
+  TemplateRow copyWithCompanion(TemplatesCompanion data) {
+    return TemplateRow(
+      id: data.id.present ? data.id.value : this.id,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      name: data.name.present ? data.name.value : this.name,
+      payload: data.payload.present ? data.payload.value : this.payload,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TemplateRow(')
+          ..write('id: $id, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('name: $name, ')
+          ..write('payload: $payload')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, updatedAt, deletedAt, name, payload);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is TemplateRow &&
+          other.id == this.id &&
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt &&
+          other.name == this.name &&
+          other.payload == this.payload);
+}
+
+class TemplatesCompanion extends UpdateCompanion<TemplateRow> {
+  final Value<String> id;
+  final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
+  final Value<String> name;
+  final Value<String> payload;
+  final Value<int> rowid;
+  const TemplatesCompanion({
+    this.id = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.name = const Value.absent(),
+    this.payload = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  TemplatesCompanion.insert({
+    this.id = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    required String name,
+    required String payload,
+    this.rowid = const Value.absent(),
+  }) : name = Value(name),
+       payload = Value(payload);
+  static Insertable<TemplateRow> custom({
+    Expression<String>? id,
+    Expression<DateTime>? updatedAt,
+    Expression<DateTime>? deletedAt,
+    Expression<String>? name,
+    Expression<String>? payload,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (name != null) 'name': name,
+      if (payload != null) 'payload': payload,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  TemplatesCompanion copyWith({
+    Value<String>? id,
+    Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
+    Value<String>? name,
+    Value<String>? payload,
+    Value<int>? rowid,
+  }) {
+    return TemplatesCompanion(
+      id: id ?? this.id,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      name: name ?? this.name,
+      payload: payload ?? this.payload,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (payload.present) {
+      map['payload'] = Variable<String>(payload.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TemplatesCompanion(')
+          ..write('id: $id, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('name: $name, ')
+          ..write('payload: $payload, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -2537,7 +3420,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $AccountsTable accounts = $AccountsTable(this);
   late final $MonthsTable months = $MonthsTable(this);
   late final $IncomesTable incomes = $IncomesTable(this);
+  late final $IncomeTopUpsTable incomeTopUps = $IncomeTopUpsTable(this);
   late final $ItemsTable items = $ItemsTable(this);
+  late final $TemplatesTable templates = $TemplatesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -2547,7 +3432,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     accounts,
     months,
     incomes,
+    incomeTopUps,
     items,
+    templates,
   ];
 }
 
@@ -3847,6 +4734,24 @@ final class $$IncomesTableReferences
       manager.$state.copyWith(prefetchedData: [item]),
     );
   }
+
+  static MultiTypedResultKey<$IncomeTopUpsTable, List<TopUp>>
+  _incomeTopUpsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.incomeTopUps,
+    aliasName: 'incomes__id__income_top_ups__income_id',
+  );
+
+  $$IncomeTopUpsTableProcessedTableManager get incomeTopUpsRefs {
+    final manager = $$IncomeTopUpsTableTableManager(
+      $_db,
+      $_db.incomeTopUps,
+    ).filter((f) => f.incomeId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_incomeTopUpsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
 }
 
 class $$IncomesTableFilterComposer
@@ -3932,6 +4837,31 @@ class $$IncomesTableFilterComposer
           ),
     );
     return composer;
+  }
+
+  Expression<bool> incomeTopUpsRefs(
+    Expression<bool> Function($$IncomeTopUpsTableFilterComposer f) f,
+  ) {
+    final $$IncomeTopUpsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.incomeTopUps,
+      getReferencedColumn: (t) => t.incomeId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$IncomeTopUpsTableFilterComposer(
+            $db: $db,
+            $table: $db.incomeTopUps,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
   }
 }
 
@@ -4095,6 +5025,31 @@ class $$IncomesTableAnnotationComposer
     );
     return composer;
   }
+
+  Expression<T> incomeTopUpsRefs<T extends Object>(
+    Expression<T> Function($$IncomeTopUpsTableAnnotationComposer a) f,
+  ) {
+    final $$IncomeTopUpsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.incomeTopUps,
+      getReferencedColumn: (t) => t.incomeId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$IncomeTopUpsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.incomeTopUps,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$IncomesTableTableManager
@@ -4110,7 +5065,11 @@ class $$IncomesTableTableManager
           $$IncomesTableUpdateCompanionBuilder,
           (Income, $$IncomesTableReferences),
           Income,
-          PrefetchHooks Function({bool monthId, bool accountId})
+          PrefetchHooks Function({
+            bool monthId,
+            bool accountId,
+            bool incomeTopUpsRefs,
+          })
         > {
   $$IncomesTableTableManager(_$AppDatabase db, $IncomesTable table)
     : super(
@@ -4175,7 +5134,403 @@ class $$IncomesTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback: ({monthId = false, accountId = false}) {
+          prefetchHooksCallback:
+              ({monthId = false, accountId = false, incomeTopUpsRefs = false}) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (incomeTopUpsRefs) db.incomeTopUps,
+                  ],
+                  addJoins:
+                      <
+                        T extends TableManagerState<
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic
+                        >
+                      >(state) {
+                        if (monthId) {
+                          state = state.withJoin(
+                            currentTable: table,
+                            currentColumn: table.monthId,
+                            referencedTable: $$IncomesTableReferences
+                                ._monthIdTable(db),
+                            referencedColumn: $$IncomesTableReferences
+                                ._monthIdTable(db)
+                                .id,
+                          ) as T;
+                        }
+                        if (accountId) {
+                          state = state.withJoin(
+                            currentTable: table,
+                            currentColumn: table.accountId,
+                            referencedTable: $$IncomesTableReferences
+                                ._accountIdTable(db),
+                            referencedColumn: $$IncomesTableReferences
+                                ._accountIdTable(db)
+                                .id,
+                          ) as T;
+                        }
+
+                        return state;
+                      },
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (incomeTopUpsRefs)
+                        await $_getPrefetchedDataByColumns<
+                          Income,
+                          $IncomesTable,
+                          TopUp,
+                          $IncomeTopUpsTable
+                        >(
+                          currentTable: table,
+                          referencedTable: $$IncomesTableReferences
+                              ._incomeTopUpsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$IncomesTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).incomeTopUpsRefs,
+                          currentColumn: 'id',
+                          referencedColumn: 'income_id',
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
+              },
+        ),
+      );
+}
+
+typedef $$IncomesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $IncomesTable,
+      Income,
+      $$IncomesTableFilterComposer,
+      $$IncomesTableOrderingComposer,
+      $$IncomesTableAnnotationComposer,
+      $$IncomesTableCreateCompanionBuilder,
+      $$IncomesTableUpdateCompanionBuilder,
+      (Income, $$IncomesTableReferences),
+      Income,
+      PrefetchHooks Function({
+        bool monthId,
+        bool accountId,
+        bool incomeTopUpsRefs,
+      })
+    >;
+typedef $$IncomeTopUpsTableCreateCompanionBuilder =
+    IncomeTopUpsCompanion Function({
+      Value<String> id,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
+      required String incomeId,
+      required int amountCents,
+      required DateTime receivedAt,
+      Value<String?> note,
+      Value<int> rowid,
+    });
+typedef $$IncomeTopUpsTableUpdateCompanionBuilder =
+    IncomeTopUpsCompanion Function({
+      Value<String> id,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<String> incomeId,
+      Value<int> amountCents,
+      Value<DateTime> receivedAt,
+      Value<String?> note,
+      Value<int> rowid,
+    });
+
+final class $$IncomeTopUpsTableReferences
+    extends BaseReferences<_$AppDatabase, $IncomeTopUpsTable, TopUp> {
+  $$IncomeTopUpsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $IncomesTable _incomeIdTable(_$AppDatabase db) =>
+      db.incomes.createAlias('income_top_ups__income_id__incomes__id');
+
+  $$IncomesTableProcessedTableManager get incomeId {
+    final $_column = $_itemColumn<String>('income_id')!;
+
+    final manager = $$IncomesTableTableManager(
+      $_db,
+      $_db.incomes,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_incomeIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$IncomeTopUpsTableFilterComposer
+    extends Composer<_$AppDatabase, $IncomeTopUpsTable> {
+  $$IncomeTopUpsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get amountCents => $composableBuilder(
+    column: $table.amountCents,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get note => $composableBuilder(
+    column: $table.note,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$IncomesTableFilterComposer get incomeId {
+    final $$IncomesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.incomeId,
+      referencedTable: $db.incomes,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$IncomesTableFilterComposer(
+            $db: $db,
+            $table: $db.incomes,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$IncomeTopUpsTableOrderingComposer
+    extends Composer<_$AppDatabase, $IncomeTopUpsTable> {
+  $$IncomeTopUpsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get amountCents => $composableBuilder(
+    column: $table.amountCents,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get note => $composableBuilder(
+    column: $table.note,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$IncomesTableOrderingComposer get incomeId {
+    final $$IncomesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.incomeId,
+      referencedTable: $db.incomes,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$IncomesTableOrderingComposer(
+            $db: $db,
+            $table: $db.incomes,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$IncomeTopUpsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $IncomeTopUpsTable> {
+  $$IncomeTopUpsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get amountCents => $composableBuilder(
+    column: $table.amountCents,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get note =>
+      $composableBuilder(column: $table.note, builder: (column) => column);
+
+  $$IncomesTableAnnotationComposer get incomeId {
+    final $$IncomesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.incomeId,
+      referencedTable: $db.incomes,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$IncomesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.incomes,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$IncomeTopUpsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $IncomeTopUpsTable,
+          TopUp,
+          $$IncomeTopUpsTableFilterComposer,
+          $$IncomeTopUpsTableOrderingComposer,
+          $$IncomeTopUpsTableAnnotationComposer,
+          $$IncomeTopUpsTableCreateCompanionBuilder,
+          $$IncomeTopUpsTableUpdateCompanionBuilder,
+          (TopUp, $$IncomeTopUpsTableReferences),
+          TopUp,
+          PrefetchHooks Function({bool incomeId})
+        > {
+  $$IncomeTopUpsTableTableManager(_$AppDatabase db, $IncomeTopUpsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$IncomeTopUpsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$IncomeTopUpsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$IncomeTopUpsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<String> incomeId = const Value.absent(),
+                Value<int> amountCents = const Value.absent(),
+                Value<DateTime> receivedAt = const Value.absent(),
+                Value<String?> note = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => IncomeTopUpsCompanion(
+                id: id,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                incomeId: incomeId,
+                amountCents: amountCents,
+                receivedAt: receivedAt,
+                note: note,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
+                required String incomeId,
+                required int amountCents,
+                required DateTime receivedAt,
+                Value<String?> note = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => IncomeTopUpsCompanion.insert(
+                id: id,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                incomeId: incomeId,
+                amountCents: amountCents,
+                receivedAt: receivedAt,
+                note: note,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$IncomeTopUpsTable, TopUp>(table),
+                  $$IncomeTopUpsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({incomeId = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [],
@@ -4195,26 +5550,14 @@ class $$IncomesTableTableManager
                       dynamic
                     >
                   >(state) {
-                    if (monthId) {
+                    if (incomeId) {
                       state = state.withJoin(
                         currentTable: table,
-                        currentColumn: table.monthId,
-                        referencedTable: $$IncomesTableReferences._monthIdTable(
-                          db,
-                        ),
-                        referencedColumn: $$IncomesTableReferences
-                            ._monthIdTable(db)
-                            .id,
-                      ) as T;
-                    }
-                    if (accountId) {
-                      state = state.withJoin(
-                        currentTable: table,
-                        currentColumn: table.accountId,
-                        referencedTable: $$IncomesTableReferences
-                            ._accountIdTable(db),
-                        referencedColumn: $$IncomesTableReferences
-                            ._accountIdTable(db)
+                        currentColumn: table.incomeId,
+                        referencedTable: $$IncomeTopUpsTableReferences
+                            ._incomeIdTable(db),
+                        referencedColumn: $$IncomeTopUpsTableReferences
+                            ._incomeIdTable(db)
                             .id,
                       ) as T;
                     }
@@ -4230,19 +5573,19 @@ class $$IncomesTableTableManager
       );
 }
 
-typedef $$IncomesTableProcessedTableManager =
+typedef $$IncomeTopUpsTableProcessedTableManager =
     ProcessedTableManager<
       _$AppDatabase,
-      $IncomesTable,
-      Income,
-      $$IncomesTableFilterComposer,
-      $$IncomesTableOrderingComposer,
-      $$IncomesTableAnnotationComposer,
-      $$IncomesTableCreateCompanionBuilder,
-      $$IncomesTableUpdateCompanionBuilder,
-      (Income, $$IncomesTableReferences),
-      Income,
-      PrefetchHooks Function({bool monthId, bool accountId})
+      $IncomeTopUpsTable,
+      TopUp,
+      $$IncomeTopUpsTableFilterComposer,
+      $$IncomeTopUpsTableOrderingComposer,
+      $$IncomeTopUpsTableAnnotationComposer,
+      $$IncomeTopUpsTableCreateCompanionBuilder,
+      $$IncomeTopUpsTableUpdateCompanionBuilder,
+      (TopUp, $$IncomeTopUpsTableReferences),
+      TopUp,
+      PrefetchHooks Function({bool incomeId})
     >;
 typedef $$ItemsTableCreateCompanionBuilder = ItemsCompanion Function({
   Value<String> id,
@@ -4259,6 +5602,7 @@ typedef $$ItemsTableCreateCompanionBuilder = ItemsCompanion Function({
   Value<int?> dueDay,
   Value<String?> note,
   Value<int> sortOrder,
+  Value<bool> isCollection,
   Value<int> rowid,
 });
 typedef $$ItemsTableUpdateCompanionBuilder = ItemsCompanion Function({
@@ -4276,6 +5620,7 @@ typedef $$ItemsTableUpdateCompanionBuilder = ItemsCompanion Function({
   Value<int?> dueDay,
   Value<String?> note,
   Value<int> sortOrder,
+  Value<bool> isCollection,
   Value<int> rowid,
 });
 
@@ -4397,6 +5742,11 @@ class $$ItemsTableFilterComposer extends Composer<_$AppDatabase, $ItemsTable> {
 
   ColumnFilters<int> get sortOrder => $composableBuilder(
     column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isCollection => $composableBuilder(
+    column: $table.isCollection,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4534,6 +5884,11 @@ class $$ItemsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get isCollection => $composableBuilder(
+    column: $table.isCollection,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$MonthsTableOrderingComposer get monthId {
     final $$MonthsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -4648,6 +6003,11 @@ class $$ItemsTableAnnotationComposer
   GeneratedColumn<int> get sortOrder =>
       $composableBuilder(column: $table.sortOrder, builder: (column) => column);
 
+  GeneratedColumn<bool> get isCollection => $composableBuilder(
+    column: $table.isCollection,
+    builder: (column) => column,
+  );
+
   $$MonthsTableAnnotationComposer get monthId {
     final $$MonthsTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -4760,6 +6120,7 @@ class $$ItemsTableTableManager
                 Value<int?> dueDay = const Value.absent(),
                 Value<String?> note = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
+                Value<bool> isCollection = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ItemsCompanion(
                 id: id,
@@ -4776,6 +6137,7 @@ class $$ItemsTableTableManager
                 dueDay: dueDay,
                 note: note,
                 sortOrder: sortOrder,
+                isCollection: isCollection,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -4794,6 +6156,7 @@ class $$ItemsTableTableManager
                 Value<int?> dueDay = const Value.absent(),
                 Value<String?> note = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
+                Value<bool> isCollection = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ItemsCompanion.insert(
                 id: id,
@@ -4810,6 +6173,7 @@ class $$ItemsTableTableManager
                 dueDay: dueDay,
                 note: note,
                 sortOrder: sortOrder,
+                isCollection: isCollection,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -4900,6 +6264,213 @@ typedef $$ItemsTableProcessedTableManager =
       BudgetItem,
       PrefetchHooks Function({bool monthId, bool parentId, bool accountId})
     >;
+typedef $$TemplatesTableCreateCompanionBuilder = TemplatesCompanion Function({
+  Value<String> id,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  required String name,
+  required String payload,
+  Value<int> rowid,
+});
+typedef $$TemplatesTableUpdateCompanionBuilder = TemplatesCompanion Function({
+  Value<String> id,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<String> name,
+  Value<String> payload,
+  Value<int> rowid,
+});
+
+class $$TemplatesTableFilterComposer
+    extends Composer<_$AppDatabase, $TemplatesTable> {
+  $$TemplatesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get payload => $composableBuilder(
+    column: $table.payload,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$TemplatesTableOrderingComposer
+    extends Composer<_$AppDatabase, $TemplatesTable> {
+  $$TemplatesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get payload => $composableBuilder(
+    column: $table.payload,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$TemplatesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $TemplatesTable> {
+  $$TemplatesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get payload =>
+      $composableBuilder(column: $table.payload, builder: (column) => column);
+}
+
+class $$TemplatesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $TemplatesTable,
+          TemplateRow,
+          $$TemplatesTableFilterComposer,
+          $$TemplatesTableOrderingComposer,
+          $$TemplatesTableAnnotationComposer,
+          $$TemplatesTableCreateCompanionBuilder,
+          $$TemplatesTableUpdateCompanionBuilder,
+          (
+            TemplateRow,
+            BaseReferences<_$AppDatabase, $TemplatesTable, TemplateRow>,
+          ),
+          TemplateRow,
+          PrefetchHooks Function()
+        > {
+  $$TemplatesTableTableManager(_$AppDatabase db, $TemplatesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$TemplatesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$TemplatesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$TemplatesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<String> payload = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => TemplatesCompanion(
+                id: id,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                name: name,
+                payload: payload,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
+                required String name,
+                required String payload,
+                Value<int> rowid = const Value.absent(),
+              }) => TemplatesCompanion.insert(
+                id: id,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                name: name,
+                payload: payload,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$TemplatesTable, TemplateRow>(table),
+                  BaseReferences<_$AppDatabase, $TemplatesTable, TemplateRow>(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$TemplatesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $TemplatesTable,
+      TemplateRow,
+      $$TemplatesTableFilterComposer,
+      $$TemplatesTableOrderingComposer,
+      $$TemplatesTableAnnotationComposer,
+      $$TemplatesTableCreateCompanionBuilder,
+      $$TemplatesTableUpdateCompanionBuilder,
+      (
+        TemplateRow,
+        BaseReferences<_$AppDatabase, $TemplatesTable, TemplateRow>,
+      ),
+      TemplateRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -4912,6 +6483,10 @@ class $AppDatabaseManager {
       $$MonthsTableTableManager(_db, _db.months);
   $$IncomesTableTableManager get incomes =>
       $$IncomesTableTableManager(_db, _db.incomes);
+  $$IncomeTopUpsTableTableManager get incomeTopUps =>
+      $$IncomeTopUpsTableTableManager(_db, _db.incomeTopUps);
   $$ItemsTableTableManager get items =>
       $$ItemsTableTableManager(_db, _db.items);
+  $$TemplatesTableTableManager get templates =>
+      $$TemplatesTableTableManager(_db, _db.templates);
 }

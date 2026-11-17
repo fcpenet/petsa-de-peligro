@@ -13,6 +13,7 @@ BudgetItem item(
   String? parent,
   ItemStatus status = ItemStatus.allotted,
   bool deleted = false,
+  bool collection = false,
 }) => BudgetItem(
   id: id,
   updatedAt: _t,
@@ -26,6 +27,7 @@ BudgetItem item(
   status: status,
   paidAt: status == ItemStatus.paid ? _t : null,
   sortOrder: 0,
+  isCollection: collection,
 );
 
 Income income(num pesos, {bool deleted = false}) => Income(
@@ -145,7 +147,10 @@ void main() {
 
     test('a parent with a zero cap behaves like a sum of its children', () {
       final t = computeMonthTotals(
-        items: [item('misc', 0), item('a', 300, parent: 'misc')],
+        items: [
+          item('misc', 0),
+          item('a', 300, parent: 'misc'),
+        ],
         incomes: [],
       );
       expect(t.allottedCents, php(300));
@@ -164,10 +169,7 @@ void main() {
         ],
         incomes: [],
       );
-      expect(
-        t.allottedCents,
-        t.paidCents + t.remainingCents + t.slackCents,
-      );
+      expect(t.allottedCents, t.paidCents + t.remainingCents + t.slackCents);
     });
 
     test('ignores soft-deleted items and incomes', () {

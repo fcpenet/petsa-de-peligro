@@ -61,6 +61,8 @@ class ParentTotals {
 class MonthTotals {
   const MonthTotals({
     required this.incomeCents,
+    this.expectedByIncome = const {},
+    this.receivedByIncome = const {},
     required this.allottedCents,
     required this.paidCents,
     required this.remainingCents,
@@ -69,7 +71,24 @@ class MonthTotals {
     required this.byParent,
   });
 
+  /// Expected income. Budgeting (unallotted) is planned against this.
   final int incomeCents;
+
+  /// Expected amount per income id.
+  final Map<String, int> expectedByIncome;
+
+  /// Top-ups received so far, per income id.
+  final Map<String, int> receivedByIncome;
+
+  /// Income that actually arrived.
+  int get receivedCents => receivedByIncome.values.fold(0, (s, v) => s + v);
+
+  /// Expected income still to arrive. An income that came in above what
+  /// was expected doesn't make up for one that's short.
+  int get toReceiveCents => expectedByIncome.entries.fold(0, (s, e) {
+    final short = e.value - (receivedByIncome[e.key] ?? 0);
+    return short > 0 ? s + short : s;
+  });
 
   /// Total reserved for the month. Equals paid + remaining + slack.
   final int allottedCents;
@@ -95,22 +114,34 @@ class MonthTotals {
 /// Computes all totals for a month.
 ///
 /// Rules:
-/// - Account and paid/remaining totals count only *leaf* items (items with no
-///   sub-expenses), so a parent never double-counts its children.
-/// - A parent with sub-expenses contributes `max(cap, used)` to the month's
-///   allotted total. The unused part of the cap is reported as slack.
+/// - Account and paid/remaining totals count only *leaf* items (not
+///   collections), so a collection never double-counts its sub-expenses.
+///   A sub-expense without an account counts toward its collection's.
+/// - A collection contributes `max(cap, used)` to the month's allotted
+///   total, even before it has sub-expenses. The unused part of the cap is
+///   reported as slack.
 /// - Soft-deleted items and incomes are ignored.
+/// - Income is planned on the expected amount; [topUps] give what arrived.
 MonthTotals computeMonthTotals({
   required Iterable<BudgetItem> items,
   required Iterable<Income> incomes,
+  Iterable<TopUp> topUps = const [],
 }) {
   final live = items.where((i) => i.deletedAt == null).toList();
-  final childrenOf = <String, List<BudgetItem>>{};
+  final byId = {for (final i in live) i.id: i};
+  final childrenOf = <String, List<BudgetItem>>{
+    for (final i in live)
+      if (i.isCollection) i.id: [],
+  };
   for (final item in live) {
     if (item.parentId != null) {
       (childrenOf[item.parentId!] ??= []).add(item);
     }
   }
+
+  /// A sub-expense without its own account is paid from its collection's.
+  String? accountOf(BudgetItem i) =>
+      i.accountId ?? (i.parentId == null ? null : byId[i.parentId]?.accountId);
 
   final accountAllotted = <String?, int>{};
   final accountPaid = <String?, int>{};
@@ -120,14 +151,15 @@ MonthTotals computeMonthTotals({
   for (final item in live) {
     final isLeaf = !childrenOf.containsKey(item.id);
     if (!isLeaf) continue;
+    final account = accountOf(item);
     accountAllotted.update(
-      item.accountId,
+      account,
       (v) => v + item.amountCents,
       ifAbsent: () => item.amountCents,
     );
     if (item.status == ItemStatus.paid) {
       accountPaid.update(
-        item.accountId,
+        account,
         (v) => v + item.amountCents,
         ifAbsent: () => item.amountCents,
       );
@@ -154,7 +186,7 @@ MonthTotals computeMonthTotals({
     for (final c in children) {
       used += c.amountCents;
       usedByAccount.update(
-        c.accountId,
+        accountOf(c),
         (v) => v + c.amountCents,
         ifAbsent: () => c.amountCents,
       );
@@ -176,10 +208,25 @@ MonthTotals computeMonthTotals({
     slack += totals.slackCents;
   }
 
+  final expected = {
+    for (final i in incomes.where((i) => i.deletedAt == null))
+      i.id: i.amountCents,
+  };
+  final received = <String, int>{};
+  for (final t in topUps) {
+    // Top-ups of deleted incomes don't count.
+    if (t.deletedAt != null || !expected.containsKey(t.incomeId)) continue;
+    received.update(
+      t.incomeId,
+      (v) => v + t.amountCents,
+      ifAbsent: () => t.amountCents,
+    );
+  }
+
   return MonthTotals(
-    incomeCents: incomes
-        .where((i) => i.deletedAt == null)
-        .fold(0, (sum, i) => sum + i.amountCents),
+    incomeCents: expected.values.fold(0, (sum, v) => sum + v),
+    expectedByIncome: expected,
+    receivedByIncome: received,
     allottedCents: allotted,
     paidCents: paid,
     remainingCents: remaining,

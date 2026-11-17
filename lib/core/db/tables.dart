@@ -46,6 +46,8 @@ class Months extends Table with SyncColumns {
 }
 
 /// Money coming in for a month: salary, 13th month, SL conversion.
+/// [amountCents] is the *expected* amount; what actually arrived is the sum
+/// of its [IncomeTopUps].
 class Incomes extends Table with SyncColumns {
   TextColumn get monthId => text().references(Months, #id)();
   TextColumn get name => text().withLength(min: 1, max: 80)();
@@ -54,12 +56,25 @@ class Incomes extends Table with SyncColumns {
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
 }
 
-/// An expense line. A row with [parentId] is a sub-expense. Only one level of
-/// nesting is allowed (enforced by BudgetRepository).
+/// Part of an income that actually arrived, e.g. the 15th and 30th payouts
+/// of a salary.
+@DataClassName('TopUp')
+class IncomeTopUps extends Table with SyncColumns {
+  TextColumn get incomeId => text().references(Incomes, #id)();
+  IntColumn get amountCents => integer()();
+  DateTimeColumn get receivedAt => dateTime()();
+  TextColumn get note => text().nullable()();
+}
+
+/// An expense line, listed under its account. A row with [parentId] is a
+/// sub-expense of a collection. Only one level of nesting is allowed
+/// (enforced by BudgetRepository).
 ///
-/// For a parent, [amountCents] is a budget cap (e.g. Misc = ₱5,000) and its
-/// sub-expenses show how much of it is used. A parent's [status] is derived
-/// from its sub-expenses and kept in sync by BudgetRepository.
+/// A collection ([isCollection], e.g. Misc) holds sub-expenses that may each
+/// be paid from a different account; a sub-expense without an account uses
+/// the collection's. The collection's [amountCents] is a budget cap and its
+/// [status] is derived from its sub-expenses, kept in sync by
+/// BudgetRepository.
 @DataClassName('BudgetItem')
 class Items extends Table with SyncColumns {
   TextColumn get monthId => text().references(Months, #id)();
@@ -75,4 +90,13 @@ class Items extends Table with SyncColumns {
   IntColumn get dueDay => integer().nullable()();
   TextColumn get note => text().nullable()();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  BoolColumn get isCollection => boolean().withDefault(const Constant(false))();
+}
+
+/// A reusable month layout. The structure is stored as JSON (see
+/// `MonthTemplate`) so it can evolve without schema changes.
+@DataClassName('TemplateRow')
+class Templates extends Table with SyncColumns {
+  TextColumn get name => text().withLength(min: 1, max: 80)();
+  TextColumn get payload => text()();
 }
