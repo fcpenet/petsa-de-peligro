@@ -38,7 +38,7 @@ class TemplatesMenu extends ConsumerWidget {
 
     return PopupMenuButton<String>(
       key: const Key('templates-menu'),
-      tooltip: 'Templates',
+      tooltip: 'Templates and month',
       icon: const Icon(Icons.copy_all),
       onSelected: (value) {
         final [action, ...rest] = value.split(':');
@@ -48,6 +48,24 @@ class TemplatesMenu extends ConsumerWidget {
         switch (action) {
           case 'manage':
             context.go('/templates');
+          case 'clear':
+            run(() async {
+              final n = items.length;
+              final m = incomes.length;
+              final ok = await confirmDelete(
+                context,
+                'everything in ${monthLabel(month.yearMonth)}',
+                detail:
+                    'Deletes $n expense${n == 1 ? '' : 's'} and $m '
+                    'income${m == 1 ? '' : 's'}, with their top-ups and '
+                    'this month’s transfers. This can’t be undone. You can '
+                    'then start again from a template, last month, or '
+                    'scratch.',
+              );
+              if (!ok) return null;
+              await ref.read(budgetRepositoryProvider).clearMonth(month.id);
+              return 'Cleared ${monthLabel(month.yearMonth)}';
+            });
           case 'new':
             context.go('/templates/new');
           case 'save':
@@ -105,6 +123,18 @@ class TemplatesMenu extends ConsumerWidget {
             child: Text('Edit templates…'),
           ),
         ],
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          key: const Key('clear-month'),
+          value: 'clear',
+          enabled: !monthIsEmpty,
+          child: Text(
+            'Delete this month…',
+            style: TextStyle(
+              color: monthIsEmpty ? null : Theme.of(context).colorScheme.error,
+            ),
+          ),
+        ),
       ],
     );
   }

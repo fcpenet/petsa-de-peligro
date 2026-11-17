@@ -52,6 +52,9 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
   final Map<String, BudgetItem> _overrides = {};
   final Set<String> _settled = {};
 
+  /// Rebalance suggestions hidden with "Not now", until they change.
+  String? _dismissedMoves;
+
   String get _monthId => widget.month.id;
   BudgetRepository get _repo => ref.read(budgetRepositoryProvider);
 
@@ -109,16 +112,19 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
     final itemsAsync = ref.watch(itemsProvider(_monthId));
     final incomesAsync = ref.watch(incomesProvider(_monthId));
     final topUpsAsync = ref.watch(topUpsProvider(_monthId));
+    final transfersAsync = ref.watch(transfersProvider(_monthId));
     final accountsAsync = ref.watch(accountsProvider);
     final error =
         itemsAsync.error ??
         incomesAsync.error ??
         topUpsAsync.error ??
+        transfersAsync.error ??
         accountsAsync.error;
     final loaded =
         itemsAsync.hasValue &&
         incomesAsync.hasValue &&
         topUpsAsync.hasValue &&
+        transfersAsync.hasValue &&
         accountsAsync.hasValue;
 
     Widget body;
@@ -134,6 +140,7 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
         items,
         incomesAsync.requireValue,
         topUpsAsync.requireValue,
+        transfersAsync.requireValue,
         accountsAsync.requireValue,
       );
     }
@@ -152,18 +159,14 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
             tooltip: 'Add',
             icon: const Icon(Icons.add_circle_outline),
             onSelected: (v) => switch (v) {
-              'collection' => showItemForm(
-                context,
-                monthId: _monthId,
-                collection: true,
-              ),
               'income' => showIncomeForm(context, monthId: _monthId),
+              'transfer' => showTransferForm(context, monthId: _monthId),
               'account' => showAccountForm(context),
               _ => null,
             },
             itemBuilder: (_) => const [
-              PopupMenuItem(value: 'collection', child: Text('Add collection')),
               PopupMenuItem(value: 'income', child: Text('Add income')),
+              PopupMenuItem(value: 'transfer', child: Text('Move money')),
               PopupMenuItem(value: 'account', child: Text('Add account')),
             ],
           ),
@@ -183,14 +186,21 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
     List<BudgetItem> items,
     List<Income> incomes,
     List<TopUp> topUps,
+    List<Transfer> transfers,
     List<Account> accounts,
   ) {
     final totals = computeMonthTotals(
       items: items,
       incomes: incomes,
       topUps: topUps,
+      transfers: transfers,
     );
-    final used = {for (final i in items) i.accountId};
+    final moves = totals.suggestedTransfers;
+    final movesKey = moves.join();
+    final used = {
+      for (final i in items) ...[i.accountId, i.paidFromAccountId],
+      ...totals.balanceByAccount.keys,
+    };
     final shownAccounts = [
       for (final a in accounts)
         if (!a.archived || used.contains(a.id)) a,
@@ -203,28 +213,51 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
     for (final i in items) {
       if (i.parentId != null) (childrenOf[i.parentId!] ??= []).add(i);
     }
+    // Collections without an account get their own card; anything else
+    // without one (only old data) is listed until an account is chosen.
+    final looseCollections = [
+      for (final i in items)
+        if (i.parentId == null && i.accountId == null && i.isCollection) i,
+    ];
     final orphans = [
       for (final i in items)
-        if (i.parentId == null && i.accountId == null) i,
+        if (i.parentId == null && i.accountId == null && !i.isCollection) i,
     ];
 
-    Widget section(Account? account) => _AccountSection(
-      account: account,
-      items: [
-        for (final i in items)
-          if (i.parentId == null && i.accountId == account?.id) i,
-      ],
-      childrenOf: childrenOf,
-      totals: totals,
-      accountName: accountName,
-      onToggle: (i) => _toggle(i, items),
-      onEdit: (i) => showItemForm(context, monthId: _monthId, existing: i),
-      onAdd: account == null
-          ? null
-          : () =>
-                showItemForm(context, monthId: _monthId, accountId: account.id),
-      onAddSub: (c) => showItemForm(context, monthId: _monthId, parentId: c.id),
-    );
+    Widget section(Account? account, {bool collections = false}) =>
+        _AccountSection(
+          account: account,
+          collectionsCard: collections,
+          items: account == null
+              ? (collections ? looseCollections : orphans)
+              : [
+                  for (final i in items)
+                    if (i.parentId == null && i.accountId == account.id) i,
+                ],
+          childrenOf: childrenOf,
+          totals: totals,
+          accountName: accountName,
+          onToggle: (i) => _toggle(i, items),
+          onEdit: (i) => showItemForm(context, monthId: _monthId, existing: i),
+          onAdd: account == null
+              ? null
+              : () => showItemForm(
+                  context,
+                  monthId: _monthId,
+                  accountId: account.id,
+                ),
+          onAddSub: (c) =>
+              showItemForm(context, monthId: _monthId, parentId: c.id),
+          onAllot: account == null
+              ? null
+              : () async {
+                  final n = await _repo.allotAccount(_monthId, account.id);
+                  _toast(
+                    'Marked $n expense${n == 1 ? '' : 's'} in '
+                    '${account.name} as allotted',
+                  );
+                },
+        );
 
     return Center(
       child: ConstrainedBox(
@@ -235,6 +268,25 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
             if (items.isEmpty && incomes.isEmpty)
               EmptyMonthBanner(month: widget.month, onMessage: _toast),
             _SummaryCard(totals: totals),
+            if (moves.isNotEmpty && movesKey != _dismissedMoves)
+              _RebalanceCard(
+                moves: moves,
+                accountName: accountName,
+                onMoved: (m) async {
+                  await _repo.addTransfer(
+                    monthId: _monthId,
+                    fromAccountId: m.fromAccountId,
+                    toAccountId: m.toAccountId,
+                    amountCents: m.amountCents,
+                    transferredAt: DateTime.now(),
+                  );
+                  _toast(
+                    'Recorded ${formatPeso(m.amountCents)} moved to '
+                    '${accountName[m.toAccountId]}',
+                  );
+                },
+                onDismiss: () => setState(() => _dismissedMoves = movesKey),
+              ),
             if (accounts.isEmpty)
               Card(
                 child: ListTile(
@@ -248,7 +300,15 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
                 ),
               ),
             for (final account in shownAccounts) section(account),
+            if (looseCollections.isNotEmpty) section(null, collections: true),
             if (orphans.isNotEmpty) section(null),
+            if (transfers.isNotEmpty)
+              _TransfersSection(
+                transfers: transfers,
+                accountName: accountName,
+                onEdit: (t) =>
+                    showTransferForm(context, monthId: _monthId, existing: t),
+              ),
             _IncomeSection(
               incomes: incomes,
               totals: totals,
@@ -304,14 +364,15 @@ class _SummaryCard extends StatelessWidget {
           children: [
             stat('Left to pay', totals.remainingCents, big: true),
             stat(
-              'Unallotted',
-              totals.unallottedCents,
+              'Unbudgeted',
+              totals.unbudgetedCents,
               big: true,
-              color: totals.unallottedCents < 0 ? scheme.error : null,
+              color: totals.unbudgetedCents < 0 ? scheme.error : null,
             ),
             stat('Expected income', totals.incomeCents),
             stat('Received', totals.receivedCents),
             stat('Expenses', totals.allottedCents),
+            stat('To allot', totals.plannedCents),
             stat('Paid', totals.paidCents),
           ],
         ),
@@ -326,8 +387,12 @@ class _ItemRow extends StatelessWidget {
     required this.onToggle,
     required this.onTap,
     this.extra,
+    this.paidFrom,
     this.indent = 0,
   });
+
+  /// Name of the account it was actually paid from, when not as planned.
+  final String? paidFrom;
 
   final BudgetItem item;
 
@@ -345,6 +410,8 @@ class _ItemRow extends StatelessWidget {
     final details = [
       ?extra,
       if (item.kind != ItemKind.expense) itemKindLabels[item.kind]!,
+      if (item.status == ItemStatus.planned) 'Planned',
+      if (paid && paidFrom != null) 'Paid from $paidFrom',
       if (paid && item.paidAt != null)
         'Paid ${formatShortDate(item.paidAt!)}'
       else if (item.dueDay != null)
@@ -411,6 +478,7 @@ class _SectionHeader extends StatelessWidget {
 class _AccountSection extends StatelessWidget {
   const _AccountSection({
     required this.account,
+    this.collectionsCard = false,
     required this.items,
     required this.childrenOf,
     required this.totals,
@@ -419,9 +487,13 @@ class _AccountSection extends StatelessWidget {
     required this.onEdit,
     required this.onAdd,
     required this.onAddSub,
+    this.onAllot,
   });
 
   final Account? account;
+
+  /// The card for collections that have no account.
+  final bool collectionsCard;
 
   /// Top-level expenses in this account.
   final List<BudgetItem> items;
@@ -433,43 +505,80 @@ class _AccountSection extends StatelessWidget {
   final VoidCallback? onAdd;
   final ValueChanged<BudgetItem> onAddSub;
 
+  /// Marks everything planned for this account as allotted.
+  final VoidCallback? onAllot;
+
   @override
   Widget build(BuildContext context) {
     final account = this.account;
-    final remaining = totals.byAccount[account?.id]?.remainingCents ?? 0;
+    final unpaidLeaves = [
+      for (final i in items) ...childrenOf[i.id] ?? [i],
+    ].where((i) => i.status != ItemStatus.paid);
+    final remaining = collectionsCard
+        ? unpaidLeaves.fold(0, (s, i) => s + i.amountCents)
+        : totals.byAccount[account?.id]?.remainingCents ?? 0;
     // Unpaid here that's charged to this account; the rest of `remaining`
     // comes from sub-expenses in other accounts' collections.
-    final own =
-        [
-              for (final i in items) ...childrenOf[i.id] ?? [i],
-            ]
-            .where(
-              (i) =>
-                  i.status == ItemStatus.allotted &&
-                  (i.accountId == null || i.accountId == account?.id),
-            )
-            .fold(0, (s, i) => s + i.amountCents);
+    final own = unpaidLeaves
+        .where((i) => i.accountId == null || i.accountId == account?.id)
+        .fold(0, (s, i) => s + i.amountCents);
     final fromOthers = remaining - own;
     return Card(
-      key: ValueKey('account-section-${account?.id ?? 'none'}'),
+      key: collectionsCard
+          ? const ValueKey('collections-section')
+          : ValueKey('account-section-${account?.id ?? 'none'}'),
       child: Column(
         children: [
           _SectionHeader(
             leading: Icon(
-              account == null
+              collectionsCard
+                  ? Icons.folder_outlined
+                  : account == null
                   ? Icons.help_outline
                   : accountTypeIcons[account.type],
             ),
-            title: account?.name ?? 'No account',
-            subtitle: account == null
+            title: collectionsCard
+                ? 'Collections'
+                : account?.name ?? 'No account',
+            subtitle: collectionsCard
+                ? 'Each sub-expense counts toward its own account'
+                : account == null
                 ? 'Tap an expense to choose its account'
-                : fromOthers > 0
-                ? 'Incl. ${formatPeso(fromOthers)} from other collections'
-                : null,
+                : [
+                    if (fromOthers > 0)
+                      'Incl. ${formatPeso(fromOthers)} from other collections',
+                    if (totals.balanceByAccount[account.id] case final b?)
+                      b > 0
+                          ? '${formatPeso(b)} unused'
+                          : '${formatPeso(-b)} over',
+                  ].join(' · ').emptyAsNull,
             trailing: remaining == 0
                 ? 'All paid'
                 : '${formatPeso(remaining)} left',
           ),
+          if ((totals.byAccount[account?.id]?.plannedCents ?? 0)
+              case final toAllot
+              when toAllot > 0 && onAllot != null && !collectionsCard)
+            Padding(
+              padding: const EdgeInsets.only(left: 16, right: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${formatPeso(toAllot)} still to move into '
+                      '${account!.name}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  FilledButton.tonalIcon(
+                    key: ValueKey('allot-${account.id}'),
+                    onPressed: onAllot,
+                    icon: const Icon(Icons.move_down, size: 18),
+                    label: const Text('Allot'),
+                  ),
+                ],
+              ),
+            ),
           for (final item in items)
             if (childrenOf[item.id] case final children?)
               _CollectionBlock(
@@ -484,6 +593,7 @@ class _AccountSection extends StatelessWidget {
             else
               _ItemRow(
                 item: item,
+                paidFrom: accountName[item.paidFromAccountId],
                 onToggle: () => onToggle(item),
                 onTap: () => onEdit(item),
               ),
@@ -590,6 +700,7 @@ class _CollectionBlock extends StatelessWidget {
             for (final item in children)
               _ItemRow(
                 item: item,
+                paidFrom: accountName[item.paidFromAccountId],
                 indent: 24,
                 extra:
                     item.accountId == null ||
@@ -616,6 +727,124 @@ class _CollectionBlock extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Suggested moves that even out accounts after expenses were paid from
+/// another account than planned.
+class _RebalanceCard extends StatelessWidget {
+  const _RebalanceCard({
+    required this.moves,
+    required this.accountName,
+    required this.onMoved,
+    required this.onDismiss,
+  });
+
+  final List<SuggestedTransfer> moves;
+  final Map<String, String> accountName;
+  final ValueChanged<SuggestedTransfer> onMoved;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      key: const Key('rebalance-card'),
+      color: theme.colorScheme.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.swap_horiz),
+                const SizedBox(width: 8),
+                Text('Rebalance', style: theme.textTheme.titleMedium),
+                const Spacer(),
+                TextButton(
+                  key: const Key('rebalance-dismiss'),
+                  onPressed: onDismiss,
+                  child: const Text('Not now'),
+                ),
+              ],
+            ),
+            const Text(
+              'Some expenses were paid from a different account than planned.',
+            ),
+            for (final m in moves)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  children: [
+                    Text(
+                      'Move ${formatPeso(m.amountCents)} from '
+                      '${accountName[m.fromAccountId] ?? '?'} → '
+                      '${accountName[m.toAccountId] ?? '?'}',
+                      style: theme.textTheme.bodyLarge,
+                    ),
+                    FilledButton.tonal(
+                      key: ValueKey('move-${m.fromAccountId}-${m.toAccountId}'),
+                      onPressed: () => onMoved(m),
+                      child: const Text('Mark as moved'),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Money moved between accounts this month.
+class _TransfersSection extends StatelessWidget {
+  const _TransfersSection({
+    required this.transfers,
+    required this.accountName,
+    required this.onEdit,
+  });
+
+  final List<Transfer> transfers;
+  final Map<String, String> accountName;
+  final ValueChanged<Transfer> onEdit;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    key: const Key('transfers-section'),
+    child: Column(
+      children: [
+        _SectionHeader(
+          leading: const Icon(Icons.swap_horiz),
+          title: 'Transfers',
+          trailing: formatPeso(transfers.fold(0, (s, t) => s + t.amountCents)),
+        ),
+        for (final t in transfers)
+          ListTile(
+            key: ValueKey('transfer-${t.id}'),
+            title: Text(
+              '${accountName[t.fromAccountId] ?? '?'} → '
+              '${accountName[t.toAccountId] ?? '?'}',
+            ),
+            subtitle: Text(
+              [formatShortDate(t.transferredAt), ?t.note].join(' · '),
+            ),
+            trailing: Text(
+              formatPeso(t.amountCents),
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+            onTap: () => onEdit(t),
+          ),
+      ],
+    ),
+  );
+}
+
+extension on String {
+  String? get emptyAsNull => isEmpty ? null : this;
 }
 
 class _IncomeSection extends StatelessWidget {

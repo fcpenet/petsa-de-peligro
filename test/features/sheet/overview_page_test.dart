@@ -91,11 +91,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       (await BudgetRepository(db).item(ids.items['Electric']!)).status,
-      ItemStatus.allotted,
+      ItemStatus.planned,
     );
     expect(
       tester.widget<Text>(find.byKey(const Key('formula-content'))).data,
-      'Not paid',
+      'Planned',
     );
     await closeApp(tester, db);
   });

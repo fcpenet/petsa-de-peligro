@@ -1,6 +1,7 @@
 // ignore_for_file: invalid_use_of_visible_for_testing_member, invalid_use_of_protected_member
 // Wipes the TEST Turso database and fills it with the November sample
-// plus a salary top-up and a "Monthly" template.
+// plus a salary top-up, an expense paid from another account and a
+// "Monthly" template.
 // Not part of the normal suite (lives outside test/). Run explicitly:
 //
 //   flutter test tool/seed_demo_test.dart --dart-define-from-file=.env.test.local
@@ -22,6 +23,7 @@ void main() {
     await db.batch((b) {
       for (final t in [
         'templates',
+        'transfers',
         'items',
         'income_top_ups',
         'incomes',
@@ -39,6 +41,13 @@ void main() {
       amountCents: 12106112,
       receivedAt: DateTime(2026, 11, 15),
       note: '15th payout',
+    );
+    // Planned on the RCBC Card, paid from UB: shows the Rebalance card.
+    await BudgetRepository(db).setStatus(
+      ids.items['Electric']!,
+      ItemStatus.paid,
+      paidAt: DateTime(2026, 11, 16),
+      paidFromAccountId: ids.accounts['UB'],
     );
     await TemplateRepository(db)
         .saveFromMonth(monthId: ids.monthId, name: 'Monthly');

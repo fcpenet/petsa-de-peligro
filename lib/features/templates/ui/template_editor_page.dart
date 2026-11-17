@@ -98,7 +98,8 @@ class _TemplateEditorState extends ConsumerState<TemplateEditor> {
   });
 
   CollectionChoices _collections() => {
-    for (final i in _draft.collectionIndexes) i: _draft.items[i].name,
+    for (final i in _draft.collectionIndexes)
+      i: (name: _draft.items[i].name, accountId: _draft.items[i].accountId),
   };
 
   void _leave() => context.canPop() ? context.pop() : context.go('/templates');
@@ -160,17 +161,12 @@ class _TemplateEditorState extends ConsumerState<TemplateEditor> {
     return discard ?? false;
   }
 
-  Future<void> _addItem({
-    String? accountId,
-    int? collectionIndex,
-    bool collection = false,
-  }) async {
+  Future<void> _addItem({String? accountId, int? collectionIndex}) async {
     final edit = await showTemplateItemForm(
       context,
       collections: _collections(),
       accountId: accountId,
       collectionIndex: collectionIndex,
-      collection: collection,
     );
     if (edit?.value case final placed?) {
       _change(
@@ -228,13 +224,15 @@ class _TemplateEditorState extends ConsumerState<TemplateEditor> {
     final accounts = ref.watch(accountsProvider).value ?? const <Account>[];
     final template = _draft.build();
 
-    // Top-level items by account, in the Accounts page order. Items whose
-    // account is gone are listed under "Unknown account".
+    // Top-level items by account, in the Accounts page order. Collections
+    // without an account get their own card; anything else without a known
+    // account is listed under "No account".
     final byAccount = <String, List<int>>{};
     final orphans = <int>[];
+    final looseCollections = <int>[];
     for (final (i, item) in _draft.items.indexed) {
       if (item.accountId == null) {
-        orphans.add(i);
+        (item.isCollection ? looseCollections : orphans).add(i);
       } else {
         (byAccount[item.accountId!] ??= []).add(i);
       }
@@ -331,6 +329,15 @@ class _TemplateEditorState extends ConsumerState<TemplateEditor> {
                     addLabel: 'Add to ${a.name}',
                     addKey: 'add-to-${a.id}',
                   ),
+                if (looseCollections.isNotEmpty)
+                  _section(
+                    key: const ValueKey('template-collections'),
+                    icon: const Icon(Icons.folder_outlined),
+                    title: 'Collections',
+                    subtitle: 'Each sub-expense counts toward its own account',
+                    indexes: looseCollections,
+                    names: accountName,
+                  ),
                 if ([
                       for (final id in byAccount.keys)
                         if (!known.containsKey(id)) ...byAccount[id]!,
@@ -346,18 +353,6 @@ class _TemplateEditorState extends ConsumerState<TemplateEditor> {
                     names: accountName,
                   ),
                 _incomes(),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    OutlinedButton.icon(
-                      key: const Key('add-collection'),
-                      onPressed: () => _addItem(collection: true),
-                      icon: const Icon(Icons.folder_outlined),
-                      label: const Text('Add collection'),
-                    ),
-                  ],
-                ),
               ],
             ),
           ),
@@ -567,7 +562,7 @@ class _Totals extends StatelessWidget {
             stat('Income', template.incomeCents),
             stat('Expenses', template.expenseCents),
             stat(
-              'Unallotted',
+              'Unbudgeted',
               unallotted,
               color: unallotted < 0 ? theme.colorScheme.error : null,
             ),

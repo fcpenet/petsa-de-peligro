@@ -40,6 +40,10 @@ final topUpsProvider = StreamProvider.family<List<TopUp>, String>(
   (ref, monthId) => ref.watch(budgetRepositoryProvider).watchTopUps(monthId),
 );
 
+final transfersProvider = StreamProvider.family<List<Transfer>, String>(
+  (ref, monthId) => ref.watch(budgetRepositoryProvider).watchTransfers(monthId),
+);
+
 final incomesProvider = StreamProvider.family<List<Income>, String>(
   (ref, monthId) => ref.watch(budgetRepositoryProvider).watchIncomes(monthId),
 );

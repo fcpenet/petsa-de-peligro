@@ -215,6 +215,7 @@ class TemplateRepository {
           dueDay: Value(t.dueDay),
           note: Value(t.note),
           isCollection: Value(t.isCollection && parentId == null),
+          status: const Value(ItemStatus.planned),
           sortOrder: Value(order++),
         );
       }

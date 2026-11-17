@@ -46,9 +46,7 @@ StatusPatch? deriveParentPatch(
 }) {
   final status = deriveParentStatus(children.map((c) => c.status));
   if (status == null) return null;
-  if (status == ItemStatus.allotted) {
-    return const StatusPatch(ItemStatus.allotted, null);
-  }
+  if (status != ItemStatus.paid) return StatusPatch(status, null);
   final latest = children
       .map((c) => c.paidAt ?? now)
       .reduce((a, b) => a.isAfter(b) ? a : b);
@@ -60,8 +58,10 @@ StatusPatch? deriveParentPatch(
 /// Returns patches keyed by item id. The target is always included; other
 /// items only when their status or payment date actually changes.
 ///
-/// - Target with sub-expenses: paying it pays every unpaid sub-expense on
-///   [paidAt] (already-paid ones keep their date); un-paying it reverts all.
+/// - Target with sub-expenses: moving it forward brings every sub-expense
+///   behind it up to [status] (paying pays them on [paidAt]; already-paid
+///   ones keep their date); moving it back brings every sub-expense ahead
+///   of it back to [status] (e.g. un-paying reverts them all).
 /// - Target that is a sub-expense: its parent is re-derived.
 Map<String, StatusPatch> planStatusChange(
   ItemFamily family, {
@@ -77,12 +77,17 @@ Map<String, StatusPatch> planStatusChange(
     targetId: StatusPatch(status, status == ItemStatus.paid ? paidAt : null),
   };
 
+  final forward = !status.isBefore(target.status);
   for (final child in family.childrenOf(targetId)) {
+    final behind = child.status.isBefore(status);
+    final ahead = status.isBefore(child.status);
+    if (forward ? !behind && status != ItemStatus.paid : !ahead) continue;
     final next = status == ItemStatus.paid
-        ? (child.status == ItemStatus.paid
-              ? StatusPatch(ItemStatus.paid, child.paidAt ?? paidAt)
-              : StatusPatch(ItemStatus.paid, paidAt))
-        : const StatusPatch(ItemStatus.allotted, null);
+        ? StatusPatch(
+            ItemStatus.paid,
+            child.status == ItemStatus.paid ? child.paidAt ?? paidAt : paidAt,
+          )
+        : StatusPatch(status, null);
     _putIfChanged(patches, child, next);
   }
 

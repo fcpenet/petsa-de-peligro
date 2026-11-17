@@ -16,8 +16,8 @@ typedef TemplateEdit<T> = ({T? value});
 /// [collectionIndex].
 typedef PlacedItem = ({TemplateItem item, int? collectionIndex});
 
-/// Collections the item form can put a sub-expense into: index → name.
-typedef CollectionChoices = Map<int, String>;
+/// Collections the item form can put a sub-expense into, by index.
+typedef CollectionChoices = Map<int, ({String name, String? accountId})>;
 
 // -------------------------------------------------------------------- item
 
@@ -27,7 +27,6 @@ Future<TemplateEdit<PlacedItem>?> showTemplateItemForm(
   TemplateItem? existing,
   int? collectionIndex,
   String? accountId,
-  bool collection = false,
 }) => showFormSheet(
   context,
   builder: (_) => TemplateItemForm(
@@ -35,7 +34,6 @@ Future<TemplateEdit<PlacedItem>?> showTemplateItemForm(
     existing: existing,
     initialCollectionIndex: collectionIndex,
     initialAccountId: accountId,
-    initialCollection: collection,
   ),
 );
 
@@ -46,14 +44,12 @@ class TemplateItemForm extends ConsumerStatefulWidget {
     this.existing,
     this.initialCollectionIndex,
     this.initialAccountId,
-    this.initialCollection = false,
   });
 
   final CollectionChoices collections;
   final TemplateItem? existing;
   final int? initialCollectionIndex;
   final String? initialAccountId;
-  final bool initialCollection;
 
   @override
   ConsumerState<TemplateItemForm> createState() => _TemplateItemFormState();
@@ -76,7 +72,7 @@ class _TemplateItemFormState extends ConsumerState<TemplateItemForm> {
   late final _note = TextEditingController(text: _existing?.note);
   late bool _isSub = widget.initialCollectionIndex != null;
   late int? _collectionIndex = widget.initialCollectionIndex;
-  late bool _isCollection = _existing?.isCollection ?? widget.initialCollection;
+  late bool _isCollection = _existing?.isCollection ?? false;
   late final int _childCount = _existing?.children.length ?? 0;
   late String? _accountId = _existing?.accountId ?? widget.initialAccountId;
   late ItemKind _kind = _existing?.kind ?? ItemKind.expense;
@@ -127,6 +123,7 @@ class _TemplateItemFormState extends ConsumerState<TemplateItemForm> {
     final accounts = ref.watch(accountsProvider).value ?? const [];
     final collections = widget.collections;
     final collection = _isCollection && !_isSub;
+    final parent = collections[_collectionIndex];
     final accountChoices = [
       for (final a in accounts)
         if (!a.archived || a.id == _accountId) a,
@@ -183,7 +180,7 @@ class _TemplateItemFormState extends ConsumerState<TemplateItemForm> {
               decoration: const InputDecoration(labelText: 'Collection'),
               items: [
                 for (final MapEntry(:key, :value) in collections.entries)
-                  DropdownMenuItem(value: key, child: Text(value)),
+                  DropdownMenuItem(value: key, child: Text(value.name)),
               ],
               onChanged: (v) => setState(() => _collectionIndex = v),
               validator: (v) => v == null ? 'Choose a collection' : null,
@@ -229,19 +226,34 @@ class _TemplateItemFormState extends ConsumerState<TemplateItemForm> {
             key: const Key('field-account'),
             initialValue: _accountId,
             decoration: InputDecoration(
-              labelText: collection ? 'Account' : 'Paid from',
+              labelText: collection ? 'Account (optional)' : 'Paid from',
+              helperText: collection && _accountId == null
+                  ? 'Its sub-expenses each choose their own account'
+                  : null,
             ),
             items: [
-              if (_isSub)
+              if (collection)
                 const DropdownMenuItem<String?>(
                   value: null,
-                  child: Text('Same as the collection'),
+                  child: Text('No account'),
+                )
+              else if (_isSub && parent?.accountId != null)
+                DropdownMenuItem<String?>(
+                  value: null,
+                  child: Text('Same as ${parent!.name}'),
                 ),
               for (final a in accountChoices)
                 DropdownMenuItem<String?>(value: a.id, child: Text(a.name)),
             ],
             onChanged: (v) => setState(() => _accountId = v),
-            validator: (v) => !_isSub && v == null ? 'Choose an account' : null,
+            // Only a collection, or a sub-expense of a collection that has
+            // an account, may leave this empty.
+            validator: (v) =>
+                v == null &&
+                    !collection &&
+                    !(_isSub && (parent == null || parent.accountId != null))
+                ? 'Choose an account'
+                : null,
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<ItemKind>(

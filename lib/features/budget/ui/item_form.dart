@@ -15,15 +15,14 @@ const itemKindLabels = {
 };
 
 /// Opens the expense form. With [existing] it edits; otherwise it adds,
-/// optionally pre-filled with an account, as a sub-expense of the collection
-/// [parentId], or as a new collection.
+/// optionally pre-filled with an account or as a sub-expense of the
+/// collection [parentId].
 Future<void> showItemForm(
   BuildContext context, {
   required String monthId,
   BudgetItem? existing,
   String? accountId,
   String? parentId,
-  bool collection = false,
 }) {
   return showFormSheet(
     context,
@@ -32,7 +31,6 @@ Future<void> showItemForm(
       existing: existing,
       initialAccountId: accountId,
       initialParentId: parentId,
-      initialCollection: collection,
     ),
   );
 }
@@ -44,14 +42,12 @@ class ItemForm extends ConsumerStatefulWidget {
     this.existing,
     this.initialAccountId,
     this.initialParentId,
-    this.initialCollection = false,
   });
 
   final String monthId;
   final BudgetItem? existing;
   final String? initialAccountId;
   final String? initialParentId;
-  final bool initialCollection;
 
   @override
   ConsumerState<ItemForm> createState() => _ItemFormState();
@@ -77,11 +73,13 @@ class _ItemFormState extends ConsumerState<ItemForm> {
       _existing?.parentId != null ||
       (_existing == null && widget.initialParentId != null);
   late String? _parentId = _existing?.parentId ?? widget.initialParentId;
-  late bool _isCollection = _existing?.isCollection ?? widget.initialCollection;
+  late bool _isCollection = _existing?.isCollection ?? false;
   late String? _accountId = _existing?.accountId ?? widget.initialAccountId;
   late ItemKind _kind = _existing?.kind ?? ItemKind.expense;
-  late bool _paid = _existing?.status == ItemStatus.paid;
+  late ItemStatus _status = _existing?.status ?? ItemStatus.planned;
+  bool get _paid => _status == ItemStatus.paid;
   late DateTime _paidAt = _existing?.paidAt ?? DateTime.now();
+  late String? _paidFrom = _existing?.paidFromAccountId;
 
   bool _saving = false;
   String? _error;
@@ -124,8 +122,13 @@ class _ItemFormState extends ConsumerState<ItemForm> {
           note: note,
           isCollection: collection,
         );
-        if (_paid && !collection) {
-          await _repo.setStatus(id, ItemStatus.paid, paidAt: _paidAt);
+        if (_status != ItemStatus.planned && !collection) {
+          await _repo.setStatus(
+            id,
+            _status,
+            paidAt: _paidAt,
+            paidFromAccountId: _paidFrom,
+          );
         }
       } else {
         await _repo.updateItem(
@@ -141,14 +144,16 @@ class _ItemFormState extends ConsumerState<ItemForm> {
         if (parentId != existing.parentId) {
           await _repo.setParent(existing.id, parentId);
         }
-        final wasPaid = existing.status == ItemStatus.paid;
         if (!collection &&
-            (_paid != wasPaid ||
-                (_paid && !_sameDay(_paidAt, existing.paidAt)))) {
+            (_status != existing.status ||
+                (_paid &&
+                    (!_sameDay(_paidAt, existing.paidAt) ||
+                        _paidFrom != existing.paidFromAccountId)))) {
           await _repo.setStatus(
             existing.id,
-            _paid ? ItemStatus.paid : ItemStatus.allotted,
+            _status,
             paidAt: _paidAt,
+            paidFromAccountId: _paidFrom,
           );
         }
       }
@@ -211,7 +216,7 @@ class _ItemFormState extends ConsumerState<ItemForm> {
         : items.where((i) => i.parentId == _existing.id).length;
     final accountChoices = [
       for (final a in accounts)
-        if (!a.archived || a.id == _accountId) a,
+        if (!a.archived || a.id == _accountId || a.id == _paidFrom) a,
     ];
     final parent = collections.where((c) => c.id == _parentId).firstOrNull;
     final collection = _isCollection && !_isSub;
@@ -317,24 +322,36 @@ class _ItemFormState extends ConsumerState<ItemForm> {
             key: const Key('field-account'),
             initialValue: _accountId,
             decoration: InputDecoration(
-              labelText: collection ? 'Account' : 'Paid from',
+              labelText: collection ? 'Account (optional)' : 'Paid from',
+              helperText: collection && _accountId == null
+                  ? 'Its sub-expenses each choose their own account'
+                  : null,
             ),
             items: [
-              if (_isSub)
+              if (collection)
+                const DropdownMenuItem<String?>(
+                  value: null,
+                  child: Text('No account'),
+                )
+              else if (_isSub && parent?.accountId != null)
                 DropdownMenuItem<String?>(
                   value: null,
                   child: Text(
-                    parent == null
-                        ? 'Same as the collection'
-                        : 'Same as ${parent.name}'
-                              '${accountName[parent.accountId] == null ? '' : ' (${accountName[parent.accountId]})'}',
+                    'Same as ${parent!.name} (${accountName[parent.accountId] ?? '?'})',
                   ),
                 ),
               for (final a in accountChoices)
                 DropdownMenuItem<String?>(value: a.id, child: Text(a.name)),
             ],
             onChanged: (v) => setState(() => _accountId = v),
-            validator: (v) => !_isSub && v == null ? 'Choose an account' : null,
+            // Only a collection, or a sub-expense of a collection that has
+            // an account, may leave this empty.
+            validator: (v) =>
+                v == null &&
+                    !collection &&
+                    !(_isSub && (parent == null || parent.accountId != null))
+                ? 'Choose an account'
+                : null,
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<ItemKind>(
@@ -386,24 +403,51 @@ class _ItemFormState extends ConsumerState<ItemForm> {
             const Padding(
               padding: EdgeInsets.only(top: 12),
               child: Text(
-                'A collection is paid when all its sub-expenses are. '
-                'Ticking it marks them all paid.',
+                'A collection follows its sub-expenses: paid when all are '
+                'paid, planned while any is planned. Ticking it pays them '
+                'all.',
                 style: TextStyle(fontSize: 12),
               ),
             )
           else ...[
             const SizedBox(height: 8),
-            SwitchListTile(
-              key: const Key('field-paid'),
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Paid'),
-              subtitle: _paid
-                  ? Text('On ${formatShortDate(_paidAt)}')
-                  : const Text('Allotted, not paid yet'),
-              value: _paid,
-              onChanged: (v) => setState(() => _paid = v),
+            const SizedBox(height: 4),
+            SegmentedButton<ItemStatus>(
+              key: const Key('field-status'),
+              segments: const [
+                ButtonSegment(
+                  value: ItemStatus.planned,
+                  label: Text('Planned', key: Key('status-planned')),
+                ),
+                ButtonSegment(
+                  value: ItemStatus.allotted,
+                  label: Text('Allotted', key: Key('status-allotted')),
+                ),
+                ButtonSegment(
+                  value: ItemStatus.paid,
+                  label: Text('Paid', key: Key('status-paid')),
+                ),
+              ],
+              selected: {_status},
+              onSelectionChanged: (s) => setState(() => _status = s.first),
             ),
-            if (_paid)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                switch (_status) {
+                  ItemStatus.planned =>
+                    'Budgeted; the money isn’t in the '
+                        'account yet',
+                  ItemStatus.allotted =>
+                    'The money is in the account, '
+                        'waiting to be paid',
+                  ItemStatus.paid => 'Paid on ${formatShortDate(_paidAt)}',
+                },
+                key: const Key('status-help'),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            if (_paid) ...[
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
@@ -413,6 +457,42 @@ class _ItemFormState extends ConsumerState<ItemForm> {
                   label: const Text('Change payment date'),
                 ),
               ),
+              const SizedBox(height: 8),
+              Builder(
+                builder: (context) {
+                  final plannedId =
+                      _accountId ?? (_isSub ? parent?.accountId : null);
+                  final planned = accountName[plannedId];
+                  return DropdownButtonFormField<String?>(
+                    key: const Key('field-paid-from'),
+                    initialValue: _paidFrom == plannedId ? null : _paidFrom,
+                    decoration: const InputDecoration(
+                      labelText: 'Actually paid from',
+                      helperText:
+                          'Pick another account if it didn’t come from the '
+                          'planned one',
+                    ),
+                    items: [
+                      DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text(
+                          planned == null
+                              ? 'As planned'
+                              : 'As planned ($planned)',
+                        ),
+                      ),
+                      for (final a in accountChoices)
+                        if (a.id != plannedId)
+                          DropdownMenuItem<String?>(
+                            value: a.id,
+                            child: Text(a.name),
+                          ),
+                    ],
+                    onChanged: (v) => setState(() => _paidFrom = v),
+                  );
+                },
+              ),
+            ],
           ],
         ],
       ),

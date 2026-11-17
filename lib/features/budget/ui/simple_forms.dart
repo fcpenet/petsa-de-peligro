@@ -354,3 +354,201 @@ class _TopUpFormState extends ConsumerState<TopUpForm> {
     );
   }
 }
+
+// ---------------------------------------------------------------- transfer
+
+Future<void> showTransferForm(
+  BuildContext context, {
+  required String monthId,
+  Transfer? existing,
+  String? fromAccountId,
+  String? toAccountId,
+  int? amountCents,
+}) => showFormSheet(
+  context,
+  builder: (_) => TransferForm(
+    monthId: monthId,
+    existing: existing,
+    initialFrom: fromAccountId,
+    initialTo: toAccountId,
+    initialAmount: amountCents,
+  ),
+);
+
+/// Money moved from one account to another.
+class TransferForm extends ConsumerStatefulWidget {
+  const TransferForm({
+    super.key,
+    required this.monthId,
+    this.existing,
+    this.initialFrom,
+    this.initialTo,
+    this.initialAmount,
+  });
+
+  final String monthId;
+  final Transfer? existing;
+  final String? initialFrom;
+  final String? initialTo;
+  final int? initialAmount;
+
+  @override
+  ConsumerState<TransferForm> createState() => _TransferFormState();
+}
+
+class _TransferFormState extends ConsumerState<TransferForm> {
+  final _formKey = GlobalKey<FormState>();
+  late String? _from = widget.existing?.fromAccountId ?? widget.initialFrom;
+  late String? _to = widget.existing?.toAccountId ?? widget.initialTo;
+  late final _amount = TextEditingController(
+    text: switch (widget.existing?.amountCents ?? widget.initialAmount) {
+      final cents? => centsToInput(cents),
+      null => '',
+    },
+  );
+  late final _note = TextEditingController(text: widget.existing?.note);
+  late DateTime _date = widget.existing?.transferredAt ?? _today();
+  bool _saving = false;
+  String? _error;
+
+  static DateTime _today() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
+  }
+
+  BudgetRepository get _repo => ref.read(budgetRepositoryProvider);
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    _note.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      helpText: 'Date moved',
+    );
+    if (date != null) setState(() => _date = date);
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    final cents = parsePesoToCents(_amount.text)!;
+    try {
+      final existing = widget.existing;
+      if (existing == null) {
+        await _repo.addTransfer(
+          monthId: widget.monthId,
+          fromAccountId: _from!,
+          toAccountId: _to!,
+          amountCents: cents,
+          transferredAt: _date,
+          note: _note.text,
+        );
+      } else {
+        await _repo.updateTransfer(
+          existing.id,
+          fromAccountId: _from!,
+          toAccountId: _to!,
+          amountCents: cents,
+          transferredAt: _date,
+          note: _note.text,
+        );
+      }
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      setState(() {
+        _saving = false;
+        _error = e is BudgetException ? e.message : 'Could not save: $e';
+      });
+    }
+  }
+
+  Future<void> _delete() async {
+    final existing = widget.existing!;
+    final ok = await confirmDelete(
+      context,
+      'transfer of ${formatPeso(existing.amountCents)}',
+    );
+    if (!ok) return;
+    setState(() => _saving = true);
+    await _repo.deleteTransfer(existing.id);
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accounts = [
+      for (final a in ref.watch(accountsProvider).value ?? const <Account>[])
+        if (!a.archived || a.id == _from || a.id == _to) a,
+    ];
+    DropdownButtonFormField<String> picker(
+      String key,
+      String label,
+      String? value,
+      ValueChanged<String?> onChanged,
+    ) => DropdownButtonFormField<String>(
+      key: Key(key),
+      initialValue: value,
+      decoration: InputDecoration(labelText: label),
+      items: [
+        for (final a in accounts)
+          DropdownMenuItem(value: a.id, child: Text(a.name)),
+      ],
+      onChanged: onChanged,
+      validator: (v) => v == null
+          ? 'Choose an account'
+          : _from == _to
+          ? 'Choose two different accounts'
+          : null,
+    );
+
+    return Form(
+      key: _formKey,
+      child: FormLayout(
+        title: widget.existing == null ? 'Move money' : 'Edit transfer',
+        saving: _saving,
+        error: _error,
+        onSave: _save,
+        onDelete: widget.existing == null ? null : _delete,
+        children: [
+          picker('field-from', 'From', _from, (v) => setState(() => _from = v)),
+          const SizedBox(height: 12),
+          picker('field-to', 'To', _to, (v) => setState(() => _to = v)),
+          const SizedBox(height: 12),
+          AmountField(key: const Key('field-amount'), controller: _amount),
+          const SizedBox(height: 12),
+          InputDecorator(
+            decoration: const InputDecoration(labelText: 'Date moved'),
+            child: Row(
+              children: [
+                Expanded(child: Text(formatShortDate(_date))),
+                TextButton.icon(
+                  key: const Key('field-date'),
+                  onPressed: _pickDate,
+                  icon: const Icon(Icons.event),
+                  label: const Text('Change'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            key: const Key('field-note'),
+            controller: _note,
+            decoration: const InputDecoration(labelText: 'Note (optional)'),
+          ),
+        ],
+      ),
+    );
+  }
+}

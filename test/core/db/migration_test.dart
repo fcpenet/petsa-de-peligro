@@ -7,6 +7,7 @@ import 'package:petsa/features/accounts/data/account_repository.dart';
 import 'package:petsa/features/budget/data/budget_repository.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
+import '../../helpers/legacy_schema.dart';
 import '../../helpers/units.dart';
 
 void main() {
@@ -48,10 +49,11 @@ void main() {
       isCollection: true,
     );
     await seed.close();
-    final raw = sqlite.sqlite3.open(file.path)
-      ..execute('ALTER TABLE items DROP COLUMN is_collection')
-      ..execute('PRAGMA user_version = 3');
-    raw.close();
+    final raw = sqlite.sqlite3.open(file.path)..execute('DROP TABLE transfers');
+    dropColumns(raw, 'items', ['is_collection', 'paid_from_account_id']);
+    raw
+      ..execute('PRAGMA user_version = 3')
+      ..close();
 
     final upgraded = AppDatabase(NativeDatabase(file));
     addTearDown(upgraded.close);
@@ -64,5 +66,51 @@ void main() {
     expect(items[child]!.isCollection, isFalse);
     // Old groups have no account until the user picks one.
     expect(items[misc]!.accountId, isNull);
+  });
+
+  test('version 4 gains paid-from and transfers', () async {
+    final dir = Directory.systemTemp.createTempSync('petsa-v4');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final file = File('${dir.path}/petsa.db');
+
+    final seed = AppDatabase(NativeDatabase(file));
+    final repo = BudgetRepository(seed);
+    final month = (await repo.ensureMonth('2026-11')).id;
+    final accounts = AccountRepository(seed);
+    final rcbc = await accounts.createAccount(
+      name: 'RCBC',
+      type: AccountType.creditCard,
+    );
+    final ub = await accounts.createAccount(name: 'UB', type: AccountType.bank);
+    final electric = await repo.addItem(
+      monthId: month,
+      name: 'Electric',
+      amountCents: php(60),
+      accountId: rcbc,
+    );
+    await repo.setStatus(electric, ItemStatus.paid);
+    await seed.close();
+    final raw = sqlite.sqlite3.open(file.path)..execute('DROP TABLE transfers');
+    dropColumns(raw, 'items', ['paid_from_account_id']);
+    raw
+      ..execute('PRAGMA user_version = 4')
+      ..close();
+
+    final upgraded = AppDatabase(NativeDatabase(file));
+    addTearDown(upgraded.close);
+    final r = BudgetRepository(upgraded);
+    final item = await r.item(electric);
+    expect(item.status, ItemStatus.paid);
+    expect(item.paidFromAccountId, isNull);
+    expect(item.isCollection, isFalse);
+    await r.setStatus(electric, ItemStatus.paid, paidFromAccountId: ub);
+    await r.addTransfer(
+      monthId: month,
+      fromAccountId: rcbc,
+      toAccountId: ub,
+      amountCents: php(60),
+      transferredAt: DateTime(2026, 11, 18),
+    );
+    expect((await r.totalsFor(month)).balanceByAccount, isEmpty);
   });
 }

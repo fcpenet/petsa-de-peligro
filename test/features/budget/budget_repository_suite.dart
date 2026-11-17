@@ -12,6 +12,10 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
   late BudgetRepository repo;
   late AccountRepository accounts;
   late String monthId;
+
+  /// Account for test collections, so their sub-expenses can leave theirs
+  /// empty.
+  late String wallet;
   var now = DateTime(2026, 11, 15, 9);
 
   setUp(() async {
@@ -20,6 +24,10 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
     repo = BudgetRepository(db, clock: () => now);
     accounts = AccountRepository(db);
     monthId = (await repo.ensureMonth('2026-11')).id;
+    wallet = await accounts.createAccount(
+      name: 'Wallet',
+      type: AccountType.cash,
+    );
   });
 
   tearDown(() => db.close());
@@ -30,6 +38,48 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
     test('ensureMonth is idempotent', () async {
       final again = await repo.ensureMonth('2026-11');
       expect(again.id, monthId);
+    });
+
+    test('clearMonth empties only that month', () async {
+      final misc = await repo.addItem(
+        monthId: monthId,
+        name: 'Misc',
+        amountCents: 1,
+        accountId: wallet,
+        isCollection: true,
+      );
+      await repo.addItem(
+        monthId: monthId,
+        name: 'x',
+        amountCents: 1,
+        parentId: misc,
+      );
+      final salary = await repo.addIncome(
+        monthId: monthId,
+        name: 'Salary',
+        amountCents: 100,
+      );
+      await repo.addTopUp(incomeId: salary, amountCents: 50, receivedAt: now);
+      final other = await accounts.createAccount(
+        name: 'Other',
+        type: AccountType.bank,
+      );
+      await repo.addTransfer(
+        monthId: monthId,
+        fromAccountId: wallet,
+        toAccountId: other,
+        amountCents: 10,
+        transferredAt: now,
+      );
+      final dec = (await repo.ensureMonth('2026-12')).id;
+      await repo.addIncome(monthId: dec, name: 'Bonus', amountCents: 1);
+
+      await repo.clearMonth(monthId);
+      expect(await repo.itemsFor(monthId), isEmpty);
+      expect(await repo.incomesFor(monthId), isEmpty);
+      expect(await repo.topUpsFor(monthId), isEmpty);
+      expect(await repo.transfersFor(monthId), isEmpty);
+      expect(await repo.incomesFor(dec), hasLength(1));
     });
 
     test('ensureMonth rejects malformed months', () {
@@ -48,14 +98,14 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
   });
 
   group('items', () {
-    test('new items start allotted with no paid date', () async {
+    test('new items start planned with no paid date', () async {
       final id = await repo.addItem(
         monthId: monthId,
         name: 'Rent',
         amountCents: php(25000),
       );
       final item = await repo.item(id);
-      expect(item.status, ItemStatus.allotted);
+      expect(item.status, ItemStatus.planned);
       expect(item.paidAt, isNull);
       expect(item.kind, ItemKind.expense);
     });
@@ -81,6 +131,7 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
         monthId: monthId,
         name: 'Misc',
         isCollection: true,
+        accountId: wallet,
         amountCents: php(5000),
       );
       final child = await repo.addItem(
@@ -105,6 +156,7 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
         monthId: monthId,
         name: 'Misc',
         isCollection: true,
+        accountId: wallet,
         amountCents: 0,
       );
       final december = (await repo.ensureMonth('2026-12')).id;
@@ -172,6 +224,7 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
         monthId: monthId,
         name: 'Misc',
         isCollection: true,
+        accountId: wallet,
         amountCents: php(5000),
       );
       a = await repo.addItem(
@@ -215,11 +268,11 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
       expect((await repo.item(a)).paidAt, now);
     });
 
-    test('parent stays allotted until every sub-expense is paid', () async {
+    test('parent stays planned until every sub-expense is paid', () async {
       await repo.setStatus(a, ItemStatus.paid);
-      expect(await statusOf(misc), ItemStatus.allotted);
+      expect(await statusOf(misc), ItemStatus.planned);
       await repo.setStatus(b, ItemStatus.paid);
-      expect(await statusOf(misc), ItemStatus.allotted);
+      expect(await statusOf(misc), ItemStatus.planned);
       await repo.setStatus(c, ItemStatus.paid);
       expect(await statusOf(misc), ItemStatus.paid);
     });
@@ -276,7 +329,7 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
         amountCents: php(236.7),
         parentId: misc,
       );
-      expect(await statusOf(misc), ItemStatus.allotted);
+      expect(await statusOf(misc), ItemStatus.planned);
     });
 
     test(
@@ -309,6 +362,7 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
         monthId: monthId,
         name: 'Other',
         isCollection: true,
+        accountId: wallet,
         amountCents: php(100),
       );
       final otherChild = await repo.addItem(
@@ -318,8 +372,8 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
         parentId: other,
       );
       await repo.setStatus(misc, ItemStatus.paid);
-      expect(await statusOf(other), ItemStatus.allotted);
-      expect(await statusOf(otherChild), ItemStatus.allotted);
+      expect(await statusOf(other), ItemStatus.planned);
+      expect(await statusOf(otherChild), ItemStatus.planned);
     });
   });
 
@@ -333,6 +387,7 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
         monthId: monthId,
         name: 'Misc',
         isCollection: true,
+        accountId: wallet,
         amountCents: php(1000),
       );
       child = await repo.addItem(
@@ -361,7 +416,7 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
     test('moving an unpaid item into a paid group reverts the group', () async {
       await repo.setStatus(misc, ItemStatus.paid);
       await repo.setParent(rent, misc);
-      expect(await statusOf(misc), ItemStatus.allotted);
+      expect(await statusOf(misc), ItemStatus.planned);
     });
 
     test('moving the last unpaid item out pays the group', () async {
@@ -372,7 +427,7 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
         parentId: misc,
       );
       await repo.setStatus(paid, ItemStatus.paid);
-      expect(await statusOf(misc), ItemStatus.allotted);
+      expect(await statusOf(misc), ItemStatus.planned);
       await repo.setParent(child, null);
       expect(await statusOf(misc), ItemStatus.paid);
     });
@@ -382,6 +437,7 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
         monthId: monthId,
         name: 'Other',
         isCollection: true,
+        accountId: wallet,
         amountCents: 0,
       );
       // Into a sub-expense.
@@ -419,7 +475,7 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
           .map((items) => items.single.status);
       expectLater(
         statuses,
-        emitsInOrder([ItemStatus.allotted, ItemStatus.paid]),
+        emitsInOrder([ItemStatus.planned, ItemStatus.paid]),
       );
       await pumpEventQueue();
       await repo.setStatus(id, ItemStatus.paid);
@@ -503,6 +559,7 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
         monthId: monthId,
         name: 'Misc',
         isCollection: true,
+        accountId: wallet,
         amountCents: php(2200),
       );
       await add('dental pliers', 549, jcb, paid: true, parent: misc);
@@ -527,12 +584,12 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
       );
 
       // A new unpaid Misc purchase on JCB shows up in JCB's remaining and
-      // reverts Misc to allotted.
+      // moves Misc back to planned.
       await add('sleeve', 296.26, jcb, parent: misc);
       totals = await repo.totalsFor(monthId);
       expect(totals.byAccount[jcb]!.remainingCents, php(296.26));
       expect(totals.remainingCents, php(47940.26));
-      expect((await repo.item(misc)).status, ItemStatus.allotted);
+      expect((await repo.item(misc)).status, ItemStatus.planned);
     });
   });
 
@@ -660,6 +717,34 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
       });
     });
 
+    test('sub-expenses of a collection without an account need one', () async {
+      final gifts = await repo.addItem(
+        monthId: monthId,
+        name: 'Gifts',
+        amountCents: 0,
+        isCollection: true,
+      );
+      expect(
+        () => repo.addItem(
+          monthId: monthId,
+          name: 'mug',
+          amountCents: 1,
+          parentId: gifts,
+        ),
+        throwsA(isA<BudgetException>()),
+      );
+      await repo.addItem(
+        monthId: monthId,
+        name: 'mug',
+        amountCents: 1,
+        accountId: jcb,
+        parentId: gifts,
+      );
+      final totals = await repo.totalsFor(monthId);
+      expect(totals.byAccount[jcb]!.remainingCents, 1);
+      expect(totals.byAccount.containsKey(null), isFalse);
+    });
+
     test('an empty collection sets aside its budget', () async {
       final misc = await collection(cents: php(2200));
       final totals = await repo.totalsFor(monthId);
@@ -669,6 +754,201 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
       expect(totals.remainingCents, 0);
       expect(totals.byAccount[cash], isNull);
       expect(totals.byParent[misc]!.childCount, 0);
+    });
+  });
+
+  group('paid from another account and transfers', () {
+    late String rcbc;
+    late String ub;
+    late String electric;
+
+    setUp(() async {
+      rcbc = await accounts.createAccount(
+        name: 'RCBC Card',
+        type: AccountType.creditCard,
+      );
+      ub = await accounts.createAccount(name: 'UB', type: AccountType.bank);
+      electric = await repo.addItem(
+        monthId: monthId,
+        name: 'Electric',
+        amountCents: php(6000),
+        accountId: rcbc,
+      );
+    });
+
+    test('paying from another account records it', () async {
+      await repo.setStatus(electric, ItemStatus.paid, paidFromAccountId: ub);
+      expect((await repo.item(electric)).paidFromAccountId, ub);
+      final totals = await repo.totalsFor(monthId);
+      expect(totals.balanceByAccount, {rcbc: php(6000), ub: -php(6000)});
+      expect(totals.suggestedTransfers.single.amountCents, php(6000));
+    });
+
+    test('the planned account is stored as "as planned"', () async {
+      await repo.setStatus(electric, ItemStatus.paid, paidFromAccountId: rcbc);
+      expect((await repo.item(electric)).paidFromAccountId, isNull);
+    });
+
+    test('changing or clearing paid-from on a paid item', () async {
+      await repo.setStatus(electric, ItemStatus.paid, paidFromAccountId: ub);
+      await repo.setStatus(electric, ItemStatus.paid);
+      expect((await repo.item(electric)).paidFromAccountId, isNull);
+    });
+
+    test('un-paying clears paid-from, including via a collection', () async {
+      await repo.setStatus(electric, ItemStatus.paid, paidFromAccountId: ub);
+      await repo.setStatus(electric, ItemStatus.allotted);
+      expect((await repo.item(electric)).paidFromAccountId, isNull);
+
+      final misc = await repo.addItem(
+        monthId: monthId,
+        name: 'Misc',
+        amountCents: 0,
+        accountId: wallet,
+        isCollection: true,
+      );
+      final child = await repo.addItem(
+        monthId: monthId,
+        name: 'pliers',
+        amountCents: php(549),
+        parentId: misc,
+      );
+      await repo.setStatus(child, ItemStatus.paid, paidFromAccountId: ub);
+      await repo.setStatus(misc, ItemStatus.allotted);
+      expect((await repo.item(child)).paidFromAccountId, isNull);
+      // A collection itself can't be "paid from" somewhere.
+      expect(
+        () => repo.setStatus(misc, ItemStatus.paid, paidFromAccountId: ub),
+        throwsA(isA<BudgetException>()),
+      );
+    });
+
+    test(
+      'a transfer settles the difference; deleting it brings it back',
+      () async {
+        await repo.setStatus(electric, ItemStatus.paid, paidFromAccountId: ub);
+        final id = await repo.addTransfer(
+          monthId: monthId,
+          fromAccountId: rcbc,
+          toAccountId: ub,
+          amountCents: php(6000),
+          transferredAt: DateTime(2026, 11, 18),
+          note: ' cover electric ',
+        );
+        final t = (await repo.transfersFor(monthId)).single;
+        expect(t.note, 'cover electric');
+        expect((await repo.totalsFor(monthId)).suggestedTransfers, isEmpty);
+
+        await repo.updateTransfer(
+          id,
+          fromAccountId: rcbc,
+          toAccountId: ub,
+          amountCents: php(1000),
+          transferredAt: DateTime(2026, 11, 19),
+        );
+        expect(
+          (await repo.totalsFor(monthId)).suggestedTransfers.single.amountCents,
+          php(5000),
+        );
+
+        await repo.deleteTransfer(id);
+        expect(await repo.transfersFor(monthId), isEmpty);
+        expect(
+          (await repo.totalsFor(monthId)).suggestedTransfers.single.amountCents,
+          php(6000),
+        );
+      },
+    );
+
+    test('transfers need two accounts and an amount', () async {
+      expect(
+        () => repo.addTransfer(
+          monthId: monthId,
+          fromAccountId: ub,
+          toAccountId: ub,
+          amountCents: 1,
+          transferredAt: now,
+        ),
+        throwsA(isA<BudgetException>()),
+      );
+      expect(
+        () => repo.addTransfer(
+          monthId: monthId,
+          fromAccountId: rcbc,
+          toAccountId: ub,
+          amountCents: 0,
+          transferredAt: now,
+        ),
+        throwsA(isA<BudgetException>()),
+      );
+    });
+  });
+
+  group('planned, allotted, paid', () {
+    late String ub;
+    late String jcb;
+
+    setUp(() async {
+      ub = await accounts.createAccount(name: 'UB', type: AccountType.bank);
+      jcb = await accounts.createAccount(
+        name: 'JCB',
+        type: AccountType.creditCard,
+      );
+    });
+
+    Future<String> add(
+      String name,
+      String? account, {
+      String? parent,
+      bool collection = false,
+    }) => repo.addItem(
+      monthId: monthId,
+      name: name,
+      amountCents: php(100),
+      accountId: account,
+      parentId: parent,
+      isCollection: collection,
+    );
+
+    test('allotting an account moves its planned expenses forward', () async {
+      final loan = await add('Loan', ub);
+      final pru = await add('Pru', ub);
+      final other = await add('Netflix', jcb);
+      final misc = await add('Misc', ub, collection: true);
+      final sleeve = await add('sleeve', null, parent: misc); // uses UB
+      final pliers = await add('pliers', jcb, parent: misc); // JCB's
+      await repo.setStatus(pru, ItemStatus.paid);
+
+      var totals = await repo.totalsFor(monthId);
+      expect(totals.byAccount[ub]!.plannedCents, php(200)); // loan, sleeve
+      expect(totals.plannedCents, php(400));
+
+      expect(await repo.allotAccount(monthId, ub), 2);
+      expect(await statusOf(loan), ItemStatus.allotted);
+      expect(await statusOf(sleeve), ItemStatus.allotted);
+      expect(await statusOf(pru), ItemStatus.paid); // untouched
+      expect(await statusOf(other), ItemStatus.planned);
+      expect(await statusOf(pliers), ItemStatus.planned);
+      // Misc still has a planned sub-expense (on JCB).
+      expect(await statusOf(misc), ItemStatus.planned);
+
+      await repo.allotAccount(monthId, jcb);
+      expect(await statusOf(misc), ItemStatus.allotted);
+      totals = await repo.totalsFor(monthId);
+      expect(totals.plannedCents, 0);
+      // Allotted is still "left to pay".
+      expect(totals.remainingCents, php(400));
+      expect(await repo.allotAccount(monthId, ub), 0);
+    });
+
+    test('going back to planned clears the payment', () async {
+      final loan = await add('Loan', ub);
+      await repo.setStatus(loan, ItemStatus.paid, paidFromAccountId: jcb);
+      await repo.setStatus(loan, ItemStatus.planned);
+      final item = await repo.item(loan);
+      expect(item.status, ItemStatus.planned);
+      expect(item.paidAt, isNull);
+      expect(item.paidFromAccountId, isNull);
     });
   });
 }
@@ -681,10 +961,13 @@ Future<({String monthId, String parent, List<String> children})>
 seedMiscWithChildren(AppDatabase db, {required int children}) async {
   final repo = budgetRepo(db);
   final monthId = (await repo.ensureMonth('2026-11')).id;
+  final cash = await AccountRepository(db)
+      .createAccount(name: 'Cash', type: AccountType.cash);
   final parent = await repo.addItem(
     monthId: monthId,
     name: 'Misc',
     isCollection: true,
+    accountId: cash,
     amountCents: php(5000),
   );
   final ids = [

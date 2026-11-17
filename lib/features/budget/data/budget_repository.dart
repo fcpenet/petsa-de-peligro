@@ -65,6 +65,42 @@ class BudgetRepository {
     return query.getSingle();
   }
 
+  /// Deletes everything in a month — expenses, income, top-ups and
+  /// transfers — in one batch, leaving it empty so it can be started again
+  /// (from a template, last month, or scratch). Other months are untouched.
+  Future<void> clearMonth(String monthId) async {
+    final now = _now();
+    final deleted = ItemsCompanion(
+      deletedAt: Value(now),
+      updatedAt: Value(now),
+    );
+    final incomeIds = _db.selectOnly(_db.incomes)
+      ..addColumns([_db.incomes.id])
+      ..where(_db.incomes.monthId.equals(monthId));
+    await _db.batch((b) {
+      b.update(
+        _db.items,
+        deleted,
+        where: (i) => i.monthId.equals(monthId) & i.deletedAt.isNull(),
+      );
+      b.update(
+        _db.incomeTopUps,
+        IncomeTopUpsCompanion(deletedAt: Value(now), updatedAt: Value(now)),
+        where: (t) => t.incomeId.isInQuery(incomeIds) & t.deletedAt.isNull(),
+      );
+      b.update(
+        _db.incomes,
+        IncomesCompanion(deletedAt: Value(now), updatedAt: Value(now)),
+        where: (i) => i.monthId.equals(monthId) & i.deletedAt.isNull(),
+      );
+      b.update(
+        _db.transfers,
+        TransfersCompanion(deletedAt: Value(now), updatedAt: Value(now)),
+        where: (t) => t.monthId.equals(monthId) & t.deletedAt.isNull(),
+      );
+    });
+  }
+
   // --------------------------------------------------------------- incomes
 
   Future<String> addIncome({
@@ -242,6 +278,7 @@ class BudgetRepository {
       note: Value(note),
       sortOrder: Value(sortOrder ?? _nextSortOrder()),
       isCollection: Value(isCollection),
+      status: const Value(ItemStatus.planned),
     );
 
     if (parentId == null) {
@@ -253,11 +290,16 @@ class BudgetRepository {
     final parent = family[parentId];
     if (parent == null) throw BudgetException('Item $parentId not found');
     _checkCollection(parent);
+    if (parent.accountId == null && accountId == null) {
+      throw BudgetException(
+        '“${parent.name}” has no account, so its sub-expenses need one',
+      );
+    }
     if (parent.monthId != monthId) {
       throw BudgetException('Sub-expense must be in the same month');
     }
 
-    // The new child starts allotted, which can only revert a paid parent.
+    // The new child starts planned, which can only move its parent back.
     final now = _now();
     final newChild = _placeholderItem(id, monthId, parentId, now);
     final patch = planParentRederive(
@@ -383,14 +425,31 @@ class BudgetRepository {
   /// [paidAt] is the date the payment was made (e.g. when a credit card item
   /// was settled); it defaults to now. Sub-expenses that were already paid
   /// keep their original payment date when a parent is marked paid.
+  ///
+  /// [paidFromAccountId] records that the item was paid from another account
+  /// than planned; null (or the planned account) means as planned. Marking
+  /// an item allotted clears it.
   Future<void> setStatus(
     String id,
     ItemStatus status, {
     DateTime? paidAt,
+    String? paidFromAccountId,
   }) async {
     final now = _now();
     final family = await _family(id);
-    if (family[id] == null) throw BudgetException('Item $id not found');
+    final item = family[id];
+    if (item == null) throw BudgetException('Item $id not found');
+    final planned =
+        item.accountId ??
+        (item.parentId == null ? null : family[item.parentId!]?.accountId);
+    final paidFrom = status == ItemStatus.paid && paidFromAccountId != planned
+        ? paidFromAccountId
+        : null;
+    if (paidFrom != null && family.childrenOf(id).isNotEmpty) {
+      throw BudgetException(
+        'Set “paid from” on the sub-expenses, not the collection',
+      );
+    }
 
     final patches = planStatusChange(
       family,
@@ -403,7 +462,60 @@ class BudgetRepository {
       for (final MapEntry(key: itemId, value: patch) in patches.entries) {
         _writePatch(b, itemId, patch, now);
       }
+      if (status == ItemStatus.paid) {
+        b.update(
+          _db.items,
+          ItemsCompanion(paidFromAccountId: Value(paidFrom)),
+          where: (i) => i.id.equals(id),
+        );
+      }
     });
+  }
+
+  /// Marks everything still planned to be paid from [accountId] as allotted
+  /// — the money has been moved into the account. Sub-expenses count toward
+  /// their own account (or their collection's); collections follow their
+  /// sub-expenses. Returns how many expenses changed.
+  Future<int> allotAccount(String monthId, String accountId) async {
+    final now = _now();
+    final items = await itemsFor(monthId);
+    final byId = {for (final i in items) i.id: i};
+    final hasChildren = {for (final i in items) ?i.parentId};
+    final targets = [
+      for (final i in items)
+        if (i.status == ItemStatus.planned &&
+            !i.isCollection &&
+            !hasChildren.contains(i.id) &&
+            (i.accountId ??
+                    (i.parentId == null
+                        ? null
+                        : byId[i.parentId]?.accountId)) ==
+                accountId)
+          i,
+    ];
+    if (targets.isEmpty) return 0;
+
+    final changed = {for (final t in targets) t.id};
+    final parents = {for (final t in targets) ?t.parentId};
+    final family = ItemFamily([
+      for (final i in items)
+        changed.contains(i.id) ? i.copyWith(status: ItemStatus.allotted) : i,
+    ]);
+    await _db.batch((b) {
+      b.update(
+        _db.items,
+        ItemsCompanion(
+          status: const Value(ItemStatus.allotted),
+          updatedAt: Value(now),
+        ),
+        where: (i) => i.id.isIn(changed),
+      );
+      for (final p in parents) {
+        final patch = planParentRederive(family, p, now: now);
+        if (patch != null) _writePatch(b, p, patch, now);
+      }
+    });
+    return targets.length;
   }
 
   /// Soft-deletes an item. Deleting a parent also deletes its sub-expenses.
@@ -452,12 +564,98 @@ class BudgetRepository {
   }
 
   Future<MonthTotals> totalsFor(String monthId) async {
-    final (items, incomes, topUps) = await (
+    final (items, incomes, topUps, transfers) = await (
       itemsFor(monthId),
       incomesFor(monthId),
       topUpsFor(monthId),
+      transfersFor(monthId),
     ).wait;
-    return computeMonthTotals(items: items, incomes: incomes, topUps: topUps);
+    return computeMonthTotals(
+      items: items,
+      incomes: incomes,
+      topUps: topUps,
+      transfers: transfers,
+    );
+  }
+
+  // -------------------------------------------------------------- transfers
+
+  /// Records money moved between two accounts in [monthId].
+  Future<String> addTransfer({
+    required String monthId,
+    required String fromAccountId,
+    required String toAccountId,
+    required int amountCents,
+    required DateTime transferredAt,
+    String? note,
+  }) async {
+    _checkTransfer(fromAccountId, toAccountId, amountCents);
+    final id = newId();
+    await _db
+        .into(_db.transfers)
+        .insert(
+          TransfersCompanion.insert(
+            id: Value(id),
+            monthId: monthId,
+            fromAccountId: fromAccountId,
+            toAccountId: toAccountId,
+            amountCents: amountCents,
+            transferredAt: transferredAt,
+            note: Value(_cleanNote(note)),
+          ),
+        );
+    return id;
+  }
+
+  Future<void> updateTransfer(
+    String id, {
+    required String fromAccountId,
+    required String toAccountId,
+    required int amountCents,
+    required DateTime transferredAt,
+    String? note,
+  }) async {
+    _checkTransfer(fromAccountId, toAccountId, amountCents);
+    final updated =
+        await (_db.update(
+          _db.transfers,
+        )..where((t) => t.id.equals(id) & t.deletedAt.isNull())).write(
+          TransfersCompanion(
+            fromAccountId: Value(fromAccountId),
+            toAccountId: Value(toAccountId),
+            amountCents: Value(amountCents),
+            transferredAt: Value(transferredAt),
+            note: Value(_cleanNote(note)),
+            updatedAt: Value(_now()),
+          ),
+        );
+    if (updated == 0) throw BudgetException('Transfer $id not found');
+  }
+
+  Future<void> deleteTransfer(String id) async {
+    final now = _now();
+    await (_db.update(_db.transfers)..where((t) => t.id.equals(id))).write(
+      TransfersCompanion(deletedAt: Value(now), updatedAt: Value(now)),
+    );
+  }
+
+  SimpleSelectStatement<$TransfersTable, Transfer> _transfersQuery(
+    String monthId,
+  ) => _db.select(_db.transfers)
+    ..where((t) => t.monthId.equals(monthId) & t.deletedAt.isNull())
+    ..orderBy([(t) => OrderingTerm(expression: t.transferredAt)]);
+
+  Future<List<Transfer>> transfersFor(String monthId) =>
+      _transfersQuery(monthId).get();
+
+  Stream<List<Transfer>> watchTransfers(String monthId) =>
+      _transfersQuery(monthId).watch();
+
+  void _checkTransfer(String from, String to, int cents) {
+    if (from == to) {
+      throw BudgetException('Choose two different accounts');
+    }
+    if (cents <= 0) throw BudgetException('Enter an amount above zero');
   }
 
   // --------------------------------------------------------------- helpers
@@ -493,6 +691,10 @@ class BudgetRepository {
       ItemsCompanion(
         status: Value(patch.status),
         paidAt: Value(patch.paidAt),
+        // Unpaid items have no "paid from".
+        paidFromAccountId: patch.status == ItemStatus.paid
+            ? const Value.absent()
+            : const Value(null),
         updatedAt: Value(now),
       ),
       where: (i) => i.id.equals(id),
@@ -513,7 +715,7 @@ class BudgetRepository {
     name: '',
     amountCents: 0,
     kind: ItemKind.expense,
-    status: ItemStatus.allotted,
+    status: ItemStatus.planned,
     sortOrder: 0,
     isCollection: false,
   );

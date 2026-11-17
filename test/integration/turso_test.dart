@@ -10,6 +10,7 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:petsa/core/db/database.dart';
 import 'package:petsa/core/db/turso/turso_database.dart';
+import 'package:petsa/features/accounts/data/account_repository.dart';
 import 'package:petsa/features/budget/data/budget_repository.dart';
 
 import '../features/budget/budget_repository_suite.dart';
@@ -21,6 +22,7 @@ const _configured = _url != '' && _token != '';
 
 const _tables = [
   'templates',
+  'transfers',
   'items',
   'income_top_ups',
   'incomes',
@@ -64,12 +66,15 @@ void main() {
         () => repo.ensureMonth('2026-11'),
       );
       await timed('ensureMonth (existing)', () => repo.ensureMonth('2026-11'));
+      final cash = await AccountRepository(db)
+          .createAccount(name: 'Cash', type: AccountType.cash);
       final misc = await timed(
         'addItem (top level)',
         () => repo.addItem(
           monthId: month.id,
           name: 'Misc',
           amountCents: php(5000),
+          accountId: cash,
           isCollection: true,
         ),
       );

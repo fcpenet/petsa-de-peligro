@@ -1,4 +1,3 @@
-import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:petsa/core/db/database.dart';
@@ -33,7 +32,7 @@ void main() {
     expect(find.text('November 2026'), findsOneWidget);
     expect(statText(tester, 'Left to pay'), '₱15,576.26');
     expect(statText(tester, 'Expected income'), '₱242,122.23');
-    expect(statText(tester, 'Unallotted'), '₱188,642.23');
+    expect(statText(tester, 'Unbudgeted'), '₱188,642.23');
     for (final name in ['UB', 'RCBC Card', 'BPI', 'JCB', 'Misc', 'Income']) {
       expect(find.text(name), findsWidgets, reason: name);
     }
@@ -205,9 +204,9 @@ void main() {
       await pumpApp(tester, db);
       await tester.tap(row('QR'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('field-paid')));
+      await tester.tap(find.byKey(const Key('status-paid')));
       await tester.pumpAndSettle();
-      expect(find.textContaining('On '), findsOneWidget);
+      expect(find.textContaining('Paid on '), findsOneWidget);
       await save(tester);
 
       final qr = await repo.item(ids.items['QR']!);
@@ -230,7 +229,7 @@ void main() {
       expect(pru.dueDay, 15);
       expect(pru.note, 'insurance');
       expect(
-        find.text('Savings · Due on the 15th · insurance'),
+        find.text('Savings · Planned · Due on the 15th · insurance'),
         findsOneWidget,
       );
       await closeApp(tester, db);
@@ -255,28 +254,73 @@ void main() {
   });
 
   group('collections', () {
-    testWidgets('add a collection from the add menu', (tester) async {
+    testWidgets('there is no root-level collection button', (tester) async {
       await pumpApp(tester, db);
       await tester.tap(find.byKey(const Key('add-menu')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Add collection'));
+      expect(find.text('Add account'), findsOneWidget); // menu is open
+      expect(find.text('Add collection'), findsNothing);
+      await closeApp(tester, db);
+    });
+
+    testWidgets('a collection can have no account', (tester) async {
+      await pumpApp(tester, db);
+      await tester.tap(find.byKey(const Key('add-expense')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('field-collection')));
       await tester.pumpAndSettle();
       expect(find.text('Add collection'), findsOneWidget);
       expect(find.text('Budget (optional)'), findsOneWidget);
-      expect(find.byKey(const Key('field-paid')), findsNothing);
+      expect(find.text('Account (optional)'), findsOneWidget);
+      expect(find.byKey(const Key('field-status')), findsNothing);
       await tester.enterText(find.byKey(const Key('field-name')), 'Gifts');
       await tester.enterText(find.byKey(const Key('field-amount')), '3000');
-      await save(tester);
-      // A collection belongs to an account too.
-      expect(find.text('Choose an account'), findsOneWidget);
-      await choose(tester, 'field-account', 'BPI');
       await save(tester);
 
       final gifts = (await repo.itemsFor(ids.monthId))
           .singleWhere((i) => i.name == 'Gifts');
       expect(gifts.isCollection, isTrue);
       expect(gifts.amountCents, php(3000));
-      expect(gifts.accountId, ids.accounts['BPI']);
+      expect(gifts.accountId, isNull);
+      // Listed in the Collections card, not as a problem.
+      final card = find.byKey(const ValueKey('collections-section'));
+      expect(
+        find.descendant(of: card, matching: find.text('Add to Gifts')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('account-section-none')), findsNothing);
+      // The empty budget is set aside, but isn't "left to pay" anywhere.
+      expect(statText(tester, 'Expenses'), '₱56,480.00');
+      expect(statText(tester, 'Left to pay'), '₱15,576.26');
+
+      // Its sub-expenses must say what paid for them.
+      await tester.tap(find.byKey(ValueKey('add-to-${gifts.id}')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('field-name')), 'mug');
+      await tester.enterText(find.byKey(const Key('field-amount')), '450');
+      await save(tester);
+      expect(find.text('Choose an account'), findsOneWidget);
+      await choose(tester, 'field-account', 'JCB');
+      await save(tester);
+      final mug = (await repo.itemsFor(ids.monthId))
+          .singleWhere((i) => i.name == 'mug');
+      expect(mug.parentId, gifts.id);
+      expect(mug.accountId, ids.accounts['JCB']);
+      expect(
+        find.descendant(of: card, matching: find.textContaining('JCB')),
+        findsOneWidget,
+      );
+      await closeApp(tester, db);
+    });
+
+    testWidgets('a collection can also live in an account', (tester) async {
+      await pumpApp(tester, db);
+      await tester.tap(find.byKey(ValueKey('add-to-${ids.accounts['BPI']}')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('field-collection')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('field-name')), 'Gifts');
+      await save(tester);
       final bpi = find.byKey(
         ValueKey('account-section-${ids.accounts['BPI']}'),
       );
@@ -284,9 +328,7 @@ void main() {
         find.descendant(of: bpi, matching: find.text('Add to Gifts')),
         findsOneWidget,
       );
-      // The empty budget is set aside, but isn't "left to pay" in BPI.
-      expect(statText(tester, 'Expenses'), '₱56,480.00');
-      expect(statText(tester, 'Left to pay'), '₱15,576.26');
+      expect(find.byKey(const ValueKey('collections-section')), findsNothing);
       await closeApp(tester, db);
     });
 
@@ -365,25 +407,28 @@ void main() {
       await closeApp(tester, db);
     });
 
-    testWidgets('expenses without an account are listed until fixed', (
+    testWidgets('old expenses without an account are listed until fixed', (
       tester,
     ) async {
-      // Like a group carried over from before collections.
-      await repo.updateItem(ids.misc, accountId: const Value(null));
+      // Only old data can be a plain expense with no account.
+      final stray = await repo.addItem(
+        monthId: ids.monthId,
+        name: 'Stray',
+        amountCents: php(10),
+      );
       await pumpApp(tester, db);
       final none = find.byKey(const ValueKey('account-section-none'));
-      expect(none, findsOneWidget);
       expect(
-        find.descendant(of: none, matching: find.text('Misc')),
+        find.descendant(of: none, matching: find.text('Stray')),
         findsOneWidget,
       );
 
-      await tester.tap(find.byKey(ValueKey('item-${ids.misc}')));
+      await tester.tap(find.byKey(ValueKey('item-$stray')));
       await tester.pumpAndSettle();
       await choose(tester, 'field-account', 'UB');
       await save(tester);
       expect(none, findsNothing);
-      expect((await repo.item(ids.misc)).accountId, ids.accounts['UB']);
+      expect((await repo.item(stray)).accountId, ids.accounts['UB']);
       await closeApp(tester, db);
     });
   });

@@ -78,7 +78,7 @@ void main() {
     expect(valueOf('Total salary'), php(242122.23));
     // 8000+7000+2000+3000+6000+25000+280 + Misc cap 2200
     expect(valueOf('Total expenses'), php(53480));
-    expect(valueOf('Unallotted'), php(242122.23 - 53480));
+    expect(valueOf('Unbudgeted'), php(242122.23 - 53480));
     expect(valueOf('UB'), php(9000));
     expect(valueOf('RCBC Card'), php(6000));
     expect(valueOf('BPI'), php(280));
@@ -146,7 +146,7 @@ void main() {
     expect(boxes[2].field, CellField.itemStatus);
     expect(boxes[2].itemId, ids.misc);
     expect(boxes[2].checked, isFalse);
-    expect(boxes[2].tooltip, 'Not paid · 1/2 paid');
+    expect(boxes[2].tooltip, 'Planned · 1/2 paid'); // sleeve is still planned
     expect(boxes[3].checked, isTrue);
   });
 
@@ -158,13 +158,29 @@ void main() {
     expect(left.tone, CellTone.negative);
   });
 
-  test('expenses without an account get their own block', () async {
+  test('collections without an account get a Collections block', () async {
     final repo = BudgetRepository(db);
     await repo.updateItem(ids.misc, accountId: const Value(null));
     model = await build();
-    expect(model.blocks.last.title, 'No account');
-    expect(texts(model.blocks.last, 0), contains('Misc'));
+    final collections = block('Collections');
+    expect(texts(collections, 0), [
+      'Collections',
+      'Misc',
+      '↳ dental pliers · JCB',
+      '↳ sleeve · Cash',
+      '↳ left in Misc',
+      'Left to pay',
+    ]);
     expect(texts(block('Cash'), 0), isNot(contains('Misc')));
+    expect(model.blocks.map((b) => b.title), isNot(contains('No account')));
+  });
+
+  test('other expenses without an account get a No account block', () async {
+    await BudgetRepository(db)
+        .addItem(monthId: ids.monthId, name: 'Stray', amountCents: 1);
+    model = await build();
+    expect(model.blocks.last.title, 'No account');
+    expect(texts(model.blocks.last, 0), contains('Stray'));
   });
 
   test('income block lists incomes', () {

@@ -65,7 +65,9 @@ void main() {
     await save(tester);
 
     // A collection in Cash with a sub-expense paid by card.
-    await tapKey(tester, 'add-collection');
+    expect(find.byKey(const Key('add-collection')), findsNothing);
+    await tapKey(tester, 'add-expense');
+    await tapKey(tester, 'field-collection');
     expect(find.text('Budget (optional)'), findsOneWidget);
     await fillItem(tester, 'Misc', '2000', account: 'Cash');
     await save(tester);
@@ -98,7 +100,7 @@ void main() {
         .data!;
     expect(stat('Income'), '₱30,000.00');
     expect(stat('Expenses'), '₱27,000.00');
-    expect(stat('Unallotted'), '₱3,000.00');
+    expect(stat('Unbudgeted'), '₱3,000.00');
     expect(find.text('Due on the 5'), findsOneWidget);
 
     await tapKey(tester, 'template-save');

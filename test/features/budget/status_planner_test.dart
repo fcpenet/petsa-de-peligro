@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:petsa/core/db/database.dart';
+import 'package:petsa/features/budget/domain/budget_calculator.dart';
 import 'package:petsa/features/budget/domain/status_planner.dart';
 
 final _now = DateTime(2026, 11, 15, 9);
@@ -135,6 +136,75 @@ void main() {
         () => plan([item('x')], 'missing', ItemStatus.paid),
         throwsArgumentError,
       );
+    });
+  });
+
+  group('three statuses', () {
+    const planned = StatusPatch(ItemStatus.planned, null);
+
+    test('a collection follows its least advanced sub-expense', () {
+      expect(
+        deriveParentStatus([ItemStatus.paid, ItemStatus.planned]),
+        ItemStatus.planned,
+      );
+      expect(
+        deriveParentStatus([ItemStatus.paid, ItemStatus.allotted]),
+        ItemStatus.allotted,
+      );
+      expect(
+        deriveParentStatus([ItemStatus.paid, ItemStatus.paid]),
+        ItemStatus.paid,
+      );
+      expect(deriveParentStatus([]), isNull);
+    });
+
+    test('allotting a collection brings planned ones up, keeps paid', () {
+      final family = [
+        item('misc', status: ItemStatus.planned),
+        item('a', parent: 'misc', status: ItemStatus.planned),
+        item('b', parent: 'misc', status: ItemStatus.paid),
+      ];
+      expect(plan(family, 'misc', ItemStatus.allotted), {
+        'misc': allotted,
+        'a': allotted,
+      });
+    });
+
+    test('un-paying a collection takes paid ones back to allotted only', () {
+      final family = [
+        item('misc', status: ItemStatus.paid),
+        item('a', parent: 'misc', status: ItemStatus.paid),
+        item('b', parent: 'misc', status: ItemStatus.paid),
+      ];
+      expect(plan(family, 'misc', ItemStatus.allotted), {
+        'misc': allotted,
+        'a': allotted,
+        'b': allotted,
+      });
+    });
+
+    test('planning a collection takes every sub-expense back', () {
+      final family = [
+        item('misc', status: ItemStatus.allotted),
+        item('a', parent: 'misc', status: ItemStatus.allotted),
+        item('b', parent: 'misc', status: ItemStatus.planned),
+      ];
+      expect(plan(family, 'misc', ItemStatus.planned), {
+        'misc': planned,
+        'a': planned,
+      });
+    });
+
+    test('allotting the last planned sub-expense allots the collection', () {
+      final family = [
+        item('misc', status: ItemStatus.planned),
+        item('a', parent: 'misc', status: ItemStatus.paid),
+        item('b', parent: 'misc', status: ItemStatus.planned),
+      ];
+      expect(plan(family, 'b', ItemStatus.allotted), {
+        'b': allotted,
+        'misc': allotted,
+      });
     });
   });
 

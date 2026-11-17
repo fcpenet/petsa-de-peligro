@@ -14,6 +14,7 @@ BudgetItem item(
   ItemStatus status = ItemStatus.allotted,
   bool deleted = false,
   bool collection = false,
+  String? paidFrom,
 }) => BudgetItem(
   id: id,
   updatedAt: _t,
@@ -28,6 +29,7 @@ BudgetItem item(
   paidAt: status == ItemStatus.paid ? _t : null,
   sortOrder: 0,
   isCollection: collection,
+  paidFromAccountId: paidFrom,
 );
 
 Income income(num pesos, {bool deleted = false}) => Income(
@@ -40,7 +42,166 @@ Income income(num pesos, {bool deleted = false}) => Income(
   sortOrder: 0,
 );
 
+Transfer transfer(String from, String to, num pesos, {bool deleted = false}) =>
+    Transfer(
+      id: '$from-$to-$pesos',
+      updatedAt: _t,
+      deletedAt: deleted ? _t : null,
+      monthId: 'm',
+      fromAccountId: from,
+      toAccountId: to,
+      amountCents: php(pesos),
+      transferredAt: _t,
+    );
+
 void main() {
+  group('paid from another account', () {
+    test('leaves the planned account spare and the payer short', () {
+      final totals = computeMonthTotals(
+        items: [
+          item(
+            'Electric',
+            6000,
+            account: 'rcbc',
+            status: ItemStatus.paid,
+            paidFrom: 'ub',
+          ),
+          item('Loan', 7000, account: 'ub', status: ItemStatus.paid),
+        ],
+        incomes: const [],
+      );
+      expect(totals.balanceByAccount, {'rcbc': php(6000), 'ub': -php(6000)});
+      expect(totals.suggestedTransfers, [
+        SuggestedTransfer('rcbc', 'ub', php(6000)),
+      ]);
+      // Paid and remaining still follow the plan.
+      expect(totals.byAccount['rcbc']!.paidCents, php(6000));
+      expect(totals.byAccount['rcbc']!.remainingCents, 0);
+    });
+
+    test('paid from the planned account changes nothing', () {
+      final totals = computeMonthTotals(
+        items: [
+          item(
+            'Rent',
+            100,
+            account: 'bpi',
+            status: ItemStatus.paid,
+            paidFrom: 'bpi',
+          ),
+        ],
+        incomes: const [],
+      );
+      expect(totals.balanceByAccount, isEmpty);
+    });
+
+    test('unpaid items do not count, even with a stale paid-from', () {
+      final totals = computeMonthTotals(
+        items: [item('Rent', 100, account: 'bpi', paidFrom: 'ub')],
+        incomes: const [],
+      );
+      expect(totals.balanceByAccount, isEmpty);
+    });
+
+    test("a sub-expense's plan is its own account or its collection's", () {
+      final totals = computeMonthTotals(
+        items: [
+          item('Misc', 500, account: 'cash', collection: true),
+          item(
+            'a',
+            100,
+            parent: 'Misc',
+            status: ItemStatus.paid,
+            paidFrom: 'jcb',
+          ),
+          item(
+            'b',
+            50,
+            parent: 'Misc',
+            account: 'ub',
+            status: ItemStatus.paid,
+            paidFrom: 'jcb',
+          ),
+        ],
+        incomes: const [],
+      );
+      expect(totals.balanceByAccount, {
+        'cash': php(100),
+        'ub': php(50),
+        'jcb': -php(150),
+      });
+    });
+
+    test('transfers even accounts out; deleted ones are ignored', () {
+      final items = [
+        item(
+          'Electric',
+          6000,
+          account: 'rcbc',
+          status: ItemStatus.paid,
+          paidFrom: 'ub',
+        ),
+      ];
+      var totals = computeMonthTotals(
+        items: items,
+        incomes: const [],
+        transfers: [transfer('rcbc', 'ub', 6000)],
+      );
+      expect(totals.balanceByAccount, isEmpty);
+      expect(totals.suggestedTransfers, isEmpty);
+
+      totals = computeMonthTotals(
+        items: items,
+        incomes: const [],
+        transfers: [
+          transfer('rcbc', 'ub', 2000),
+          transfer('rcbc', 'ub', 4000, deleted: true),
+        ],
+      );
+      expect(totals.suggestedTransfers, [
+        SuggestedTransfer('rcbc', 'ub', php(4000)),
+      ]);
+    });
+
+    test('a transfer with nothing behind it is suggested back', () {
+      final totals = computeMonthTotals(
+        items: const [],
+        incomes: const [],
+        transfers: [transfer('ub', 'gcash', 500)],
+      );
+      expect(totals.suggestedTransfers, [
+        SuggestedTransfer('gcash', 'ub', php(500)),
+      ]);
+    });
+  });
+
+  group('suggestTransfers', () {
+    test('covers the biggest shortfall from the biggest surplus first', () {
+      final moves = suggestTransfers({
+        'a': 700,
+        'b': 300,
+        'x': -600,
+        'y': -400,
+      });
+      expect(moves, [
+        const SuggestedTransfer('a', 'x', 600),
+        const SuggestedTransfer('a', 'y', 100),
+        const SuggestedTransfer('b', 'y', 300),
+      ]);
+      // Applying the moves evens everything out.
+      final after = {'a': 700, 'b': 300, 'x': -600, 'y': -400};
+      for (final m in moves) {
+        after[m.fromAccountId] = after[m.fromAccountId]! - m.amountCents;
+        after[m.toAccountId] = after[m.toAccountId]! + m.amountCents;
+      }
+      expect(after.values.every((v) => v == 0), isTrue);
+    });
+
+    test('nothing to do when balanced', () {
+      expect(suggestTransfers({}), isEmpty);
+    });
+  });
+
   group('deriveParentStatus', () {
     test('null when there are no sub-expenses', () {
       expect(deriveParentStatus([]), isNull);
@@ -64,7 +225,7 @@ void main() {
       final t = computeMonthTotals(items: [], incomes: []);
       expect(t.incomeCents, 0);
       expect(t.allottedCents, 0);
-      expect(t.unallottedCents, 0);
+      expect(t.unbudgetedCents, 0);
       expect(t.byAccount, isEmpty);
     });
 
@@ -84,7 +245,7 @@ void main() {
       expect(t.allottedCents, php(32280));
       expect(t.paidCents, php(25000));
       expect(t.remainingCents, php(7280));
-      expect(t.unallottedCents, php(7720));
+      expect(t.unbudgetedCents, php(7720));
     });
 
     test('items without an account are grouped under null', () {
@@ -194,7 +355,7 @@ void main() {
         items: [item('a', 1500)],
         incomes: [income(1000)],
       );
-      expect(t.unallottedCents, php(-500));
+      expect(t.unbudgetedCents, php(-500));
     });
   });
 }

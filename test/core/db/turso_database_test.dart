@@ -209,15 +209,15 @@ void main() {
       expect(server.requestCount, 3);
     });
 
-    test('totalsFor is 3 parallel requests', () async {
+    test('totalsFor is 4 parallel requests', () async {
       final db = AppDatabase(connect());
       addTearDown(db.close);
       final ids = await seedMiscWithChildren(db, children: 2);
 
       server.requests.clear();
       await budgetRepo(db).totalsFor(ids.monthId);
-      // items ‖ incomes ‖ top-ups
-      expect(server.requestCount, 3);
+      // items ‖ incomes ‖ top-ups ‖ transfers
+      expect(server.requestCount, 4);
     });
   });
 

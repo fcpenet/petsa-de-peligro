@@ -156,6 +156,7 @@ SheetModel buildSheet({
   required List<BudgetItem> items,
   required List<Income> incomes,
   List<TopUp> topUps = const [],
+  List<Transfer> transfers = const [],
 }) {
   final live = items.where((i) => i.deletedAt == null).toList();
   final liveIncomes = incomes.where((i) => i.deletedAt == null).toList();
@@ -163,6 +164,7 @@ SheetModel buildSheet({
     items: live,
     incomes: liveIncomes,
     topUps: topUps,
+    transfers: transfers,
   );
   final accountName = {for (final a in accounts) a.id: a.name};
 
@@ -248,8 +250,9 @@ SheetModel buildSheet({
     row('Total salary', totals.incomeCents);
     row('Salary received', totals.receivedCents);
     row('Total expenses', totals.allottedCents);
-    row('Unallotted', totals.unallottedCents, bold: true);
+    row('Unbudgeted', totals.unbudgetedCents, bold: true);
     row('Paid so far', totals.paidCents);
+    row('To allot', totals.plannedCents);
     spacer();
     row('Left to pay', null, header: true);
     for (final a in shownAccounts) {
@@ -261,6 +264,18 @@ SheetModel buildSheet({
     row('Remaining total', totals.remainingCents, bold: true);
     if (totals.slackCents > 0) {
       row('Unused collection budget', totals.slackCents);
+    }
+    // Expenses paid from another account than planned leave money to move.
+    if (totals.suggestedTransfers case final moves when moves.isNotEmpty) {
+      spacer();
+      row('Rebalance', null, header: true);
+      for (final m in moves) {
+        row(
+          '${accountName[m.fromAccountId] ?? '?'} → '
+          '${accountName[m.toAccountId] ?? '?'}',
+          m.amountCents,
+        );
+      }
     }
     addBlock(BlockKind.summary, 'Summary', const [170, 120], [labels, values]);
   }
@@ -334,11 +349,20 @@ SheetModel buildSheet({
   // --------------------------------------------------------------- accounts
   // Each account lists its expenses; a collection is followed by its
   // sub-expenses (marked ↳, with their account when it differs).
-  void accountBlock(String title, String? accountId) {
+  /// With a null [accountId], [collections] picks account-less collections
+  /// (the "Collections" block) or other account-less expenses.
+  void accountBlock(
+    String title,
+    String? accountId, {
+    bool collections = false,
+  }) {
     final b = blocks.length;
     final rows = [
       for (final i in live)
-        if (i.parentId == null && i.accountId == accountId) i,
+        if (i.parentId == null &&
+            i.accountId == accountId &&
+            (accountId != null || i.isCollection == collections))
+          i,
     ];
     if (rows.isEmpty && accountId == null) return;
     final childrenOf = <String, List<BudgetItem>>{
@@ -358,7 +382,7 @@ SheetModel buildSheet({
       for (final r in rows) ...childrenOf[r.id] ?? [r],
     ];
     final unpaid = leaves
-        .where((i) => i.status == ItemStatus.allotted)
+        .where((i) => i.status != ItemStatus.paid)
         .fold(0, (s, i) => s + i.amountCents);
 
     final names = <SheetCell>[
@@ -381,7 +405,9 @@ SheetModel buildSheet({
       if (children == null) {
         names.add(_itemName(item, b));
         amounts.add(_itemAmount(item, b));
-        paid.add(_itemCheckbox(item, b));
+        paid.add(
+          _itemCheckbox(item, b, paidFrom: accountName[item.paidFromAccountId]),
+        );
         continue;
       }
       final parentTotals = totals.byParent[item.id];
@@ -394,7 +420,13 @@ SheetModel buildSheet({
             : ' · ${accountName[child.accountId] ?? '?'}';
         names.add(_itemName(child, b, text: '↳ ${child.name}$from'));
         amounts.add(_itemAmount(child, b));
-        paid.add(_itemCheckbox(child, b));
+        paid.add(
+          _itemCheckbox(
+            child,
+            b,
+            paidFrom: accountName[child.paidFromAccountId],
+          ),
+        );
       }
       final left = parentTotals?.leftCents ?? item.amountCents;
       names.add(
@@ -437,7 +469,10 @@ SheetModel buildSheet({
   for (final account in shownAccounts) {
     accountBlock(account.name, account.id);
   }
-  // Expenses that lost their account (e.g. old groups) until one is chosen.
+  // Collections without an account; their sub-expenses count toward their
+  // own accounts.
+  accountBlock('Collections', null, collections: true);
+  // Anything else without an account (old data) until one is chosen.
   accountBlock('No account', null);
 
   return SheetModel(columns, blocks, cells);
@@ -472,15 +507,19 @@ SheetCell _itemAmount(
   block: block,
 );
 
-SheetCell _itemCheckbox(BudgetItem item, int block, {ParentTotals? children}) =>
-    SheetCell(
-      kind: CellKind.checkbox,
-      checked: item.status == ItemStatus.paid,
-      field: CellField.itemStatus,
-      itemId: item.id,
-      tooltip: _paidTooltip(item, children: children),
-      block: block,
-    );
+SheetCell _itemCheckbox(
+  BudgetItem item,
+  int block, {
+  ParentTotals? children,
+  String? paidFrom,
+}) => SheetCell(
+  kind: CellKind.checkbox,
+  checked: item.status == ItemStatus.paid,
+  field: CellField.itemStatus,
+  itemId: item.id,
+  tooltip: _paidTooltip(item, children: children, paidFrom: paidFrom),
+  block: block,
+);
 
 const _months = [
   'Jan',
@@ -500,12 +539,18 @@ const _months = [
 String _formatShortDate(DateTime d) =>
     '${_months[d.month - 1]} ${d.day}, ${d.year}';
 
-String? _paidTooltip(BudgetItem item, {ParentTotals? children}) {
+String? _paidTooltip(
+  BudgetItem item, {
+  ParentTotals? children,
+  String? paidFrom,
+}) {
   final progress = children == null
       ? ''
       : ' · ${children.paidCount}/${children.childCount} paid';
   if (item.status == ItemStatus.paid && item.paidAt != null) {
-    return 'Paid ${_formatShortDate(item.paidAt!)}$progress';
+    final from = paidFrom == null ? '' : ' from $paidFrom';
+    return 'Paid ${_formatShortDate(item.paidAt!)}$from$progress';
   }
-  return children == null ? null : 'Not paid$progress';
+  final label = item.status == ItemStatus.planned ? 'Planned' : 'Allotted';
+  return '$label$progress';
 }

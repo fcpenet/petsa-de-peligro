@@ -74,13 +74,19 @@ class _OverviewGridState extends ConsumerState<_OverviewGrid> {
     final items = ref.watch(itemsProvider(widget.month.id));
     final incomes = ref.watch(incomesProvider(widget.month.id));
     final topUps = ref.watch(topUpsProvider(widget.month.id));
+    final transfers = ref.watch(transfersProvider(widget.month.id));
     final accounts = ref.watch(accountsProvider);
     final error =
-        items.error ?? incomes.error ?? topUps.error ?? accounts.error;
+        items.error ??
+        incomes.error ??
+        topUps.error ??
+        transfers.error ??
+        accounts.error;
     if (error != null) return Center(child: Text('Error: $error'));
     if (!items.hasValue ||
         !incomes.hasValue ||
         !topUps.hasValue ||
+        !transfers.hasValue ||
         !accounts.hasValue) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -89,6 +95,7 @@ class _OverviewGridState extends ConsumerState<_OverviewGrid> {
       items: items.requireValue,
       incomes: incomes.requireValue,
       topUps: topUps.requireValue,
+      transfers: transfers.requireValue,
     );
     return Column(
       children: [

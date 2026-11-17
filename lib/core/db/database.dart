@@ -15,6 +15,7 @@ part 'database.g.dart';
     Incomes,
     IncomeTopUps,
     Items,
+    Transfers,
     Templates,
   ],
 )
@@ -25,7 +26,7 @@ class AppDatabase extends _$AppDatabase {
   factory AppDatabase.open() => AppDatabase(defaultExecutor());
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -42,6 +43,10 @@ class AppDatabase extends _$AppDatabase {
           'WHERE (parent_id IS NULL AND account_id IS NULL) '
           'OR id IN (SELECT parent_id FROM items WHERE parent_id IS NOT NULL)',
         );
+      }
+      if (from < 5) {
+        await m.addColumn(items, items.paidFromAccountId);
+        await m.createTable(transfers);
       }
     },
     beforeOpen: (details) async {

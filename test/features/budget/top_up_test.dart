@@ -13,6 +13,7 @@ import 'package:petsa/features/templates/data/template_repository.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 import '../../helpers/app_harness.dart';
+import '../../helpers/legacy_schema.dart';
 import '../../helpers/november.dart';
 import '../../helpers/test_db.dart';
 
@@ -53,7 +54,7 @@ void main() {
       expect(totals.receivedCents, php(221061.12));
       expect(totals.toReceiveCents, php(21061.11));
       // Budgeting still plans against the expected salary.
-      expect(totals.unallottedCents, php(188642.23));
+      expect(totals.unbudgetedCents, php(188642.23));
     });
 
     test('edit and delete a top-up', () async {
@@ -213,9 +214,11 @@ void main() {
     await seed.close();
     final raw = sqlite.sqlite3.open(file.path)
       ..execute('DROP TABLE income_top_ups')
-      ..execute('ALTER TABLE items DROP COLUMN is_collection')
-      ..execute('PRAGMA user_version = 2');
-    raw.close();
+      ..execute('DROP TABLE transfers');
+    dropColumns(raw, 'items', ['is_collection', 'paid_from_account_id']);
+    raw
+      ..execute('PRAGMA user_version = 2')
+      ..close();
 
     final upgraded = AppDatabase(NativeDatabase(file));
     addTearDown(upgraded.close);
@@ -319,7 +322,10 @@ void main() {
 
     testWidgets('top-ups work on a phone', (tester) async {
       await pumpApp(tester, db, size: phone);
-      await tester.ensureVisible(find.byKey(ValueKey('top-up-${ids.salary}')));
+      await tester.scrollUntilVisible(
+        find.byKey(ValueKey('top-up-${ids.salary}')),
+        400,
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(ValueKey('top-up-${ids.salary}')));
       await tester.pumpAndSettle();

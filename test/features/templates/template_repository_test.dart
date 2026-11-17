@@ -184,7 +184,8 @@ void main() {
     final dec = await budget.itemsFor(december);
     expect(created, nov.length);
     expect(dec.length, nov.length);
-    expect(dec.every((i) => i.status == ItemStatus.allotted), isTrue);
+    // Template months start planned: nothing moved or paid yet.
+    expect(dec.every((i) => i.status == ItemStatus.planned), isTrue);
     expect(dec.every((i) => i.paidAt == null), isTrue);
     // New rows, not moved ones.
     expect(
@@ -349,6 +350,6 @@ void main() {
     final version = await legacy
         .customSelect('PRAGMA user_version')
         .getSingle();
-    expect(version.data.values.single, 4);
+    expect(version.data.values.single, 5);
   });
 }

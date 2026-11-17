@@ -10,8 +10,18 @@ enum AccountType { cash, bank, ewallet, creditCard }
 /// from spending so reports don't treat them as expenses.
 enum ItemKind { expense, savings, debt }
 
-/// Only two states by design: money is either set aside (allotted) or paid.
-enum ItemStatus { allotted, paid }
+/// An expense moves forward through three states:
+/// - planned: budgeted for the month, money not moved yet;
+/// - allotted: the money is in the account it will be paid from;
+/// - paid.
+/// Declared in that order, so `index` compares progress.
+enum ItemStatus {
+  planned,
+  allotted,
+  paid;
+
+  bool isBefore(ItemStatus other) => index < other.index;
+}
 
 /// Every syncable row gets a UUID, an update timestamp and a soft-delete
 /// marker so cloud sync can be added later without a schema rewrite.
@@ -84,13 +94,31 @@ class Items extends Table with SyncColumns {
   IntColumn get amountCents => integer()();
   TextColumn get kind =>
       textEnum<ItemKind>().withDefault(Constant(ItemKind.expense.name))();
+  // Inserts always set this explicitly: databases created before
+  // `planned` existed keep 'allotted' as the column default.
   TextColumn get status =>
-      textEnum<ItemStatus>().withDefault(Constant(ItemStatus.allotted.name))();
+      textEnum<ItemStatus>().withDefault(Constant(ItemStatus.planned.name))();
   DateTimeColumn get paidAt => dateTime().nullable()();
+
+  /// Set when the item was paid from another account than planned (e.g.
+  /// planned on the RCBC Card, paid from UB). Null means the planned one.
+  TextColumn get paidFromAccountId =>
+      text().nullable().references(Accounts, #id)();
   IntColumn get dueDay => integer().nullable()();
   TextColumn get note => text().nullable()();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
   BoolColumn get isCollection => boolean().withDefault(const Constant(false))();
+}
+
+/// Money moved between two accounts, e.g. to cover an expense that was
+/// paid from another account than planned.
+class Transfers extends Table with SyncColumns {
+  TextColumn get monthId => text().references(Months, #id)();
+  TextColumn get fromAccountId => text().references(Accounts, #id)();
+  TextColumn get toAccountId => text().references(Accounts, #id)();
+  IntColumn get amountCents => integer()();
+  DateTimeColumn get transferredAt => dateTime()();
+  TextColumn get note => text().nullable()();
 }
 
 /// A reusable month layout. The structure is stored as JSON (see
