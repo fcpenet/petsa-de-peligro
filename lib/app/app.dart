@@ -8,6 +8,7 @@ import '../features/accounts/ui/accounts_page.dart';
 import '../features/budget/data/budget_repository.dart';
 import '../features/budget/ui/budget_page.dart';
 import '../features/sheet/ui/overview_page.dart';
+import '../features/summary/ui/summary_page.dart';
 import '../features/templates/ui/template_editor_page.dart';
 import '../features/templates/ui/templates_page.dart';
 
@@ -34,6 +35,12 @@ GoRouter buildRouter({DateTime Function() clock = DateTime.now}) {
             redirect: (_, state) => validMonth(state, 'budget'),
             builder: (_, state) =>
                 BudgetPage(yearMonth: state.pathParameters['month']!),
+          ),
+          GoRoute(
+            path: '/summary/:month',
+            redirect: (_, state) => validMonth(state, 'summary'),
+            builder: (_, state) =>
+                SummaryPage(yearMonth: state.pathParameters['month']!),
           ),
           GoRoute(
             path: '/overview/:month',
@@ -82,6 +89,7 @@ class AppShell extends StatelessWidget {
 
   static const _destinations = [
     (icon: Icons.receipt_long, label: 'Budget', path: 'budget'),
+    (icon: Icons.insights_outlined, label: 'Summary', path: 'summary'),
     (icon: Icons.table_chart_outlined, label: 'Overview', path: 'overview'),
     (icon: Icons.copy_all, label: 'Templates', path: 'templates'),
     (icon: Icons.account_balance_outlined, label: 'Accounts', path: 'accounts'),
@@ -94,7 +102,7 @@ class AppShell extends StatelessWidget {
     return i < 0 ? 0 : i;
   }
 
-  /// Keeps the month when switching between Budget and Overview.
+  /// Keeps the month when switching between Budget, Summary and Overview.
   /// (Nested template routes like /templates/new aren't months, which the
   /// year-month check below rejects.)
   String _monthFromLocation() {

@@ -11,6 +11,7 @@ import '../../accounts/ui/account_form.dart';
 import '../../templates/ui/template_widgets.dart';
 import '../data/budget_repository.dart';
 import '../domain/budget_calculator.dart';
+import '../domain/status_filter.dart';
 import '../domain/status_planner.dart';
 import 'item_form.dart';
 import 'simple_forms.dart';
@@ -224,17 +225,37 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
         if (i.parentId == null && i.accountId == null && !i.isCollection) i,
     ];
 
-    Widget section(Account? account, {bool collections = false}) =>
-        _AccountSection(
-          account: account,
-          collectionsCard: collections,
-          items: account == null
+    final filter = StatusFilter(items, ref.watch(shownStatusesProvider));
+    List<BudgetItem> topLevel(Account? account, {bool collections = false}) => [
+      for (final i
+          in account == null
               ? (collections ? looseCollections : orphans)
               : [
                   for (final i in items)
                     if (i.parentId == null && i.accountId == account.id) i,
-                ],
-          childrenOf: childrenOf,
+                ])
+        if (filter.matches(i)) i,
+    ];
+    final visibleChildren = {
+      for (final id in childrenOf.keys) id: filter.childrenOf(id),
+    };
+    // While filtering, sections with nothing to show are hidden.
+    bool showSection(Account? account, {bool collections = false}) =>
+        !filter.isActive ||
+        topLevel(account, collections: collections).isNotEmpty;
+    final nothingMatches =
+        filter.isActive &&
+        !shownAccounts.any(showSection) &&
+        !(looseCollections.isNotEmpty &&
+            showSection(null, collections: true)) &&
+        !(orphans.isNotEmpty && showSection(null));
+
+    Widget section(Account? account, {bool collections = false}) =>
+        _AccountSection(
+          account: account,
+          collectionsCard: collections,
+          items: topLevel(account, collections: collections),
+          childrenOf: visibleChildren,
           totals: totals,
           accountName: accountName,
           onToggle: (i) => _toggle(i, items),
@@ -299,9 +320,27 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
                   onTap: () => showAccountForm(context),
                 ),
               ),
-            for (final account in shownAccounts) section(account),
-            if (looseCollections.isNotEmpty) section(null, collections: true),
-            if (orphans.isNotEmpty) section(null),
+            if (items.isNotEmpty)
+              _StatusFilterBar(
+                counts: StatusFilter.counts(items),
+                shown: filter.shown,
+                onToggle: ref.read(shownStatusesProvider.notifier).toggle,
+                onShowAll: ref.read(shownStatusesProvider.notifier).showAll,
+              ),
+            if (nothingMatches)
+              const Card(
+                key: Key('filter-empty'),
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('No expenses match the selected statuses.'),
+                ),
+              ),
+            for (final account in shownAccounts)
+              if (showSection(account)) section(account),
+            if (looseCollections.isNotEmpty &&
+                showSection(null, collections: true))
+              section(null, collections: true),
+            if (orphans.isNotEmpty && showSection(null)) section(null),
             if (transfers.isNotEmpty)
               _TransfersSection(
                 transfers: transfers,
@@ -724,6 +763,55 @@ class _CollectionBlock extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Planned / Allotted / Paid chips that narrow the list.
+class _StatusFilterBar extends StatelessWidget {
+  const _StatusFilterBar({
+    required this.counts,
+    required this.shown,
+    required this.onToggle,
+    required this.onShowAll,
+  });
+
+  final Map<ItemStatus, int> counts;
+  final Set<ItemStatus> shown;
+  final ValueChanged<ItemStatus> onToggle;
+  final VoidCallback onShowAll;
+
+  static const _labels = {
+    ItemStatus.planned: 'Planned',
+    ItemStatus.allotted: 'Allotted',
+    ItemStatus.paid: 'Paid',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final filtering = shown.length < ItemStatus.values.length;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          for (final s in ItemStatus.values)
+            FilterChip(
+              key: Key('filter-${s.name}'),
+              label: Text('${_labels[s]} (${counts[s] ?? 0})'),
+              selected: shown.contains(s),
+              onSelected: (_) => onToggle(s),
+            ),
+          if (filtering)
+            TextButton(
+              key: const Key('filter-all'),
+              onPressed: onShowAll,
+              child: const Text('Show all'),
+            ),
+        ],
       ),
     );
   }

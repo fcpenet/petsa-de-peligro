@@ -38,7 +38,13 @@ void main() {
       location: '/overview/2026-11',
       size: const Size(3200, 1400),
     );
-    expect(find.text('Summary'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('cell-0-0')),
+        matching: find.text('Summary'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Electric'), findsOneWidget);
     expect(find.text('Paid?'), findsWidgets);
     expect(find.text('A'), findsOneWidget);
@@ -110,7 +116,13 @@ void main() {
     await tester.tap(find.byTooltip('Next month'));
     await tester.pumpAndSettle();
     expect(find.text('December 2026'), findsOneWidget);
-    expect(find.text('Summary'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('cell-0-0')),
+        matching: find.text('Summary'),
+      ),
+      findsOneWidget,
+    );
     await closeApp(tester, db);
   });
 

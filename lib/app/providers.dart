@@ -59,3 +59,19 @@ final templatesProvider = StreamProvider<List<TemplateRow>>(
 final institutionsProvider = StreamProvider<List<Institution>>(
   (ref) => ref.watch(accountRepositoryProvider).watchInstitutions(),
 );
+
+/// Statuses the Budget list shows. Kept while switching months.
+class ShownStatuses extends Notifier<Set<ItemStatus>> {
+  @override
+  Set<ItemStatus> build() => ItemStatus.values.toSet();
+
+  void toggle(ItemStatus status) => state = state.contains(status)
+      ? ({...state}..remove(status))
+      : {...state, status};
+
+  void showAll() => state = ItemStatus.values.toSet();
+}
+
+final shownStatusesProvider = NotifierProvider<ShownStatuses, Set<ItemStatus>>(
+  ShownStatuses.new,
+);
