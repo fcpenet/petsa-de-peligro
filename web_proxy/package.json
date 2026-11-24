@@ -1,0 +1,8 @@
+{
+  "name": "petsa-web-proxy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/"
+  }
+}

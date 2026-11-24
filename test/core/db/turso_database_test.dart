@@ -222,6 +222,31 @@ void main() {
   });
 
   // The whole repository suite, over the HTTP protocol.
+  group('without a token (web proxy)', () {
+    test('sends no Authorization header and works', () async {
+      server.dispose();
+      server = FakeTursoServer(token: '');
+      final db = AppDatabase(
+        TursoDatabase(
+          url: 'https://petsa.pages.dev/',
+          authToken: '',
+          httpClient: server.client,
+        ),
+      );
+      addTearDown(db.close);
+      driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+      expect(await db.select(db.accounts).get(), isEmpty);
+      expect(server.requestCount, greaterThan(0));
+    });
+
+    test('a real token is still required by a server that expects one', () {
+      final db = AppDatabase(connect(token: ''));
+      addTearDown(db.close);
+      driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+      expect(db.select(db.accounts).get(), throwsA(isA<TursoException>()));
+    });
+  });
+
   group('repository suite over fake Turso', () {
     budgetRepositoryTests(() async {
       driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;

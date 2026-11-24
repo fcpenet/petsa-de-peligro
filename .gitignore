@@ -50,3 +50,8 @@ app.*.map.json
 # Local secrets (Turso URL/token)
 .env.local
 .env.test.local
+
+# Cloudflare
+web_proxy/node_modules/
+.wrangler/
+web_proxy/.wrangler/

@@ -56,7 +56,8 @@ Uri tursoHttpUri(String url) {
 final class TursoDatabase extends DelegatedDatabase {
   TursoDatabase._(super.delegate, {super.logStatements});
 
-  /// [url] accepts `libsql://`, `https://` or `http://` URLs.
+  /// [url] accepts `libsql://`, `https://` or `http://` URLs. An empty
+  /// [authToken] sends no `Authorization` header (for the web proxy).
   factory TursoDatabase({
     required String url,
     required String authToken,
@@ -98,7 +99,8 @@ class _PipelineClient {
     final response = await _http.post(
       base.resolve('/v3/pipeline'),
       headers: {
-        'Authorization': 'Bearer $_token',
+        // No token when talking to the web proxy, which adds it server-side.
+        if (_token.isNotEmpty) 'Authorization': 'Bearer $_token',
         'Content-Type': 'application/json',
       },
       body: jsonEncode({'baton': baton, 'requests': requests}),

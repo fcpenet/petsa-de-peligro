@@ -33,7 +33,9 @@ class FakeTursoServer {
     if (request.method != 'POST' || request.url.path != '/v3/pipeline') {
       return http.Response('not found', 404);
     }
-    if (request.headers['Authorization'] != 'Bearer $token') {
+    // An empty token plays the web proxy: it must receive no Authorization.
+    final expected = token.isEmpty ? null : 'Bearer $token';
+    if (request.headers['Authorization'] != expected) {
       return http.Response(jsonEncode({'error': 'Unauthorized'}), 401);
     }
     final status = failNextWithStatus;
