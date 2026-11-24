@@ -84,56 +84,63 @@ void main() {
 
     Finder row(String name) => find.byKey(ValueKey('item-${ids.items[name]}'));
 
-    testWidgets('chips narrow the list without changing totals', (
+    testWidgets('picking a status shows only those, totals unchanged', (
       tester,
     ) async {
       await pumpApp(tester, db);
-      expect(find.text('Planned (3)'), findsOneWidget); // Electric, QR, sleeve
-      expect(find.text('Allotted (2)'), findsOneWidget);
-      expect(find.text('Paid (4)'), findsOneWidget);
+      expect(find.text('Planned 3'), findsOneWidget); // Electric, QR, sleeve
+      expect(find.text('Allotted 2'), findsOneWidget);
+      expect(find.text('Paid 4'), findsOneWidget);
+      expect(find.text('Unpaid 5'), findsOneWidget);
+      expect(find.byKey(const Key('filter-summary')), findsNothing);
       final left = tester
           .widget<Text>(find.byKey(const Key('stat-Left to pay')))
           .data;
 
-      // Hide paid: only what's still to pay.
-      await tester.tap(find.byKey(const Key('filter-paid')));
+      // Unpaid: only what's still to pay.
+      await tester.tap(find.byKey(const Key('filter-unpaid')));
       await tester.pumpAndSettle();
       expect(row('Basic'), findsNothing);
       expect(row('Electric'), findsOneWidget);
       expect(row('dental pliers'), findsNothing); // paid sub-expense
       expect(row('sleeve'), findsOneWidget); // its planned sibling
       expect(find.byKey(ValueKey('collection-${ids.misc}')), findsOneWidget);
+      expect(find.byKey(const Key('filter-summary')), findsOneWidget);
       expect(
         tester.widget<Text>(find.byKey(const Key('stat-Left to pay'))).data,
         left,
       );
 
       // Only allotted: just UB's two, other accounts hidden.
-      await tester.tap(find.byKey(const Key('filter-planned')));
+      await tester.tap(find.byKey(const Key('filter-allotted')));
       await tester.pumpAndSettle();
       expect(row('UB Loan'), findsOneWidget);
       expect(row('Pru'), findsOneWidget);
+      expect(row('Electric'), findsNothing);
       expect(
         find.byKey(ValueKey('account-section-${ids.accounts['BPI']}')),
         findsNothing,
       );
       expect(find.byKey(ValueKey('collection-${ids.misc}')), findsNothing);
+      expect(find.text('2 shown · ₱9,000.00'), findsOneWidget);
 
-      // Nothing selected.
-      await tester.tap(find.byKey(const Key('filter-allotted')));
+      // Only paid.
+      await tester.tap(find.byKey(const Key('filter-paid')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('filter-empty')), findsOneWidget);
+      expect(row('Basic'), findsOneWidget);
+      expect(row('UB Loan'), findsNothing);
 
       await tester.tap(find.byKey(const Key('filter-all')));
       await tester.pumpAndSettle();
       expect(row('Basic'), findsOneWidget);
-      expect(find.byKey(const Key('filter-all')), findsNothing);
+      expect(row('UB Loan'), findsOneWidget);
+      expect(find.byKey(const Key('filter-summary')), findsNothing);
       await closeApp(tester, db);
     });
 
     testWidgets('the filter stays when switching months', (tester) async {
       await pumpApp(tester, db);
-      await tester.tap(find.byKey(const Key('filter-paid')));
+      await tester.tap(find.byKey(const Key('filter-unpaid')));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Previous month'));
       await tester.pumpAndSettle();

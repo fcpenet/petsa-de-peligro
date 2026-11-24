@@ -105,11 +105,9 @@ void main() {
   testWidgets('filter by Charged', (tester) async {
     await repo.setStatus(electric, ItemStatus.charged);
     await pumpApp(tester, db);
-    expect(find.text('Charged (1)'), findsOneWidget);
-    for (final s in ['planned', 'allotted', 'paid']) {
-      await tester.tap(find.byKey(Key('filter-$s')));
-      await tester.pumpAndSettle();
-    }
+    expect(find.text('Charged 1'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('filter-charged')));
+    await tester.pumpAndSettle();
     expect(find.byKey(ValueKey('item-$electric')), findsOneWidget);
     expect(find.byKey(ValueKey('item-${ids.items['Cats']}')), findsNothing);
     await closeApp(tester, db);

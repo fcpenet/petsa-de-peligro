@@ -339,17 +339,6 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
                 context.go(budgetLocation(widget.month.yearMonth, id)),
           )
         : null;
-    final filterBar = items.isEmpty
-        ? null
-        : _StatusFilterBar(
-            showCharged:
-                cardIds.isNotEmpty ||
-                StatusFilter.counts(items)[ItemStatus.charged]! > 0,
-            counts: StatusFilter.counts(items),
-            shown: filter.shown,
-            onToggle: ref.read(shownStatusesProvider.notifier).toggle,
-            onShowAll: ref.read(shownStatusesProvider.notifier).showAll,
-          );
     const filterEmpty = Card(
       key: Key('filter-empty'),
       child: Padding(
@@ -383,14 +372,12 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
                 .fold(0, (s, i) => s + i.amountCents)
           : totals.remainingCents,
       scope: focusAccount?.name ?? (focusCollections ? 'Collections' : null),
-      unpaid: scopeLeaves.where((i) => i.status != ItemStatus.paid).toList(),
-      charged: scopeLeaves
-          .where((i) => i.status == ItemStatus.charged)
-          .toList(),
-      showCharged: cardIds.isNotEmpty,
+      leaves: scopeLeaves,
+      showCharged:
+          cardIds.isNotEmpty ||
+          scopeLeaves.any((i) => i.status == ItemStatus.charged),
       shown: filter.shown,
       onOnly: ref.read(shownStatusesProvider.notifier).only,
-      onShowAll: ref.read(shownStatusesProvider.notifier).showAll,
     );
 
     if (focusAccount != null || focusCollections) {
@@ -420,7 +407,6 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
           children: [
             ?chips,
-            ?filterBar,
             if (showMain)
               section(focusAccount, collections: focusCollections)
             else if (elsewhere.isEmpty)
@@ -507,7 +493,6 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
                 onTap: () => showAccountForm(context),
               ),
             ),
-          ?filterBar,
           if (nothingMatches) filterEmpty,
           for (final account in shownAccounts)
             if (showSection(account)) section(account),
@@ -998,45 +983,69 @@ class _CollectionBlock extends StatelessWidget {
 }
 
 /// Planned / Allotted / Paid chips that narrow the list.
-/// Pinned under the app bar: what's left to pay, plus one-tap filters for
-/// everything not paid yet and for card charges whose bill isn't paid.
+/// Pinned under the app bar: what's left to pay, and a filter that shows
+/// only the expenses with one status (or everything not paid yet).
 class _LeftToPayBar extends StatelessWidget {
   const _LeftToPayBar({
     required this.leftCents,
     required this.scope,
-    required this.unpaid,
-    required this.charged,
+    required this.leaves,
     required this.showCharged,
     required this.shown,
     required this.onOnly,
-    required this.onShowAll,
   });
 
   final int leftCents;
 
   /// The account shown, or null for the whole month.
   final String? scope;
-  final List<BudgetItem> unpaid;
-  final List<BudgetItem> charged;
+
+  /// The expenses (no collections with sub-expenses) in what's shown.
+  final List<BudgetItem> leaves;
+
+  /// Charged only applies to credit cards.
   final bool showCharged;
   final Set<ItemStatus> shown;
   final ValueChanged<Set<ItemStatus>> onOnly;
-  final VoidCallback onShowAll;
 
-  static const unpaidStatuses = {
-    ItemStatus.planned,
-    ItemStatus.allotted,
-    ItemStatus.charged,
-  };
+  static final options = <(String, String, Set<ItemStatus>)>[
+    ('all', 'All', ItemStatus.values.toSet()),
+    (
+      'unpaid',
+      'Unpaid',
+      {ItemStatus.planned, ItemStatus.allotted, ItemStatus.charged},
+    ),
+    ('planned', 'Planned', {ItemStatus.planned}),
+    ('allotted', 'Allotted', {ItemStatus.allotted}),
+    ('charged', 'Charged', {ItemStatus.charged}),
+    ('paid', 'Paid', {ItemStatus.paid}),
+  ];
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    bool same(Set<ItemStatus> a) =>
-        a.length == shown.length && a.containsAll(shown);
-    final unpaidOn = same(unpaidStatuses);
-    final chargedOn = same({ItemStatus.charged});
-    int sum(List<BudgetItem> l) => l.fold(0, (s, i) => s + i.amountCents);
+    bool isShown(Set<ItemStatus> set) =>
+        set.length == shown.length && set.containsAll(shown);
+    final matching = [
+      for (final i in leaves)
+        if (shown.contains(i.status)) i,
+    ];
+    final filtering = !isShown(ItemStatus.values.toSet());
+    final chips = [
+      for (final (key, label, set) in options)
+        if (key != 'charged' || showCharged)
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              key: Key('filter-$key'),
+              label: Text(
+                '$label ${leaves.where((i) => set.contains(i.status)).length}',
+              ),
+              selected: isShown(set),
+              onSelected: (_) => onOnly(set),
+            ),
+          ),
+    ];
 
     return Material(
       key: const Key('left-to-pay-bar'),
@@ -1047,118 +1056,58 @@ class _LeftToPayBar extends StatelessWidget {
           constraints: const BoxConstraints(maxWidth: 760),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: Wrap(
-              spacing: 12,
-              runSpacing: 6,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              alignment: WrapAlignment.spaceBetween,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(
-                      scope == null ? 'Left to pay' : 'Left to pay · $scope',
-                      style: theme.textTheme.labelMedium,
-                    ),
-                    Text(
-                      formatPeso(leftCents),
-                      key: const Key('stat-Left to pay'),
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                  ],
-                ),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: [
-                    FilterChip(
-                      key: const Key('quick-unpaid'),
-                      avatar: const Icon(Icons.pending_actions, size: 18),
-                      label: Text(
-                        'Unpaid ${unpaid.length} · ${formatPeso(sum(unpaid))}',
-                      ),
-                      showCheckmark: false,
-                      selected: unpaidOn,
-                      onSelected: (_) =>
-                          unpaidOn ? onShowAll() : onOnly(unpaidStatuses),
-                    ),
-                    if (showCharged || charged.isNotEmpty)
-                      FilterChip(
-                        key: const Key('quick-charged'),
-                        avatar: const Icon(Icons.credit_card, size: 18),
-                        label: Text(
-                          'Charged ${charged.length} · '
-                          '${formatPeso(sum(charged))}',
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          scope == null
+                              ? 'Left to pay'
+                              : 'Left to pay · $scope',
+                          style: theme.textTheme.labelMedium,
                         ),
-                        showCheckmark: false,
-                        selected: chargedOn,
-                        onSelected: (_) => chargedOn
-                            ? onShowAll()
-                            : onOnly({ItemStatus.charged}),
+                        Text(
+                          formatPeso(leftCents),
+                          key: const Key('stat-Left to pay'),
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Spacer(),
+                    if (filtering)
+                      Text(
+                        '${matching.length} shown · '
+                        '${formatPeso(matching.fold(0, (s, i) => s + i.amountCents))}',
+                        key: const Key('filter-summary'),
+                        style: theme.textTheme.bodySmall,
                       ),
                   ],
                 ),
+                const SizedBox(height: 6),
+                if (isNarrow(context))
+                  SingleChildScrollView(
+                    key: const Key('status-filter'),
+                    scrollDirection: Axis.horizontal,
+                    child: Row(children: chips),
+                  )
+                else
+                  Wrap(
+                    key: const Key('status-filter'),
+                    runSpacing: 4,
+                    children: chips,
+                  ),
               ],
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _StatusFilterBar extends StatelessWidget {
-  const _StatusFilterBar({
-    required this.showCharged,
-    required this.counts,
-    required this.shown,
-    required this.onToggle,
-    required this.onShowAll,
-  });
-
-  /// Charged only applies to credit cards.
-  final bool showCharged;
-  final Map<ItemStatus, int> counts;
-  final Set<ItemStatus> shown;
-  final ValueChanged<ItemStatus> onToggle;
-  final VoidCallback onShowAll;
-
-  static const _labels = {
-    ItemStatus.planned: 'Planned',
-    ItemStatus.allotted: 'Allotted',
-    ItemStatus.charged: 'Charged',
-    ItemStatus.paid: 'Paid',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final filtering = shown.length < ItemStatus.values.length;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 4,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          for (final s in ItemStatus.values)
-            if (s != ItemStatus.charged || showCharged)
-              FilterChip(
-                key: Key('filter-${s.name}'),
-                label: Text('${_labels[s]} (${counts[s] ?? 0})'),
-                selected: shown.contains(s),
-                onSelected: (_) => onToggle(s),
-              ),
-          if (filtering)
-            TextButton(
-              key: const Key('filter-all'),
-              onPressed: onShowAll,
-              child: const Text('Show all'),
-            ),
-        ],
       ),
     );
   }

@@ -135,14 +135,16 @@ void main() {
   group('pinned left-to-pay bar', () {
     testWidgets('Unpaid shows only what is not paid yet', (tester) async {
       await pumpApp(tester, db);
-      expect(find.text('Unpaid 5 · ₱15,576.26'), findsOneWidget);
-      await tester.tap(find.byKey(const Key('quick-unpaid')));
+      expect(find.text('Unpaid 5'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('filter-unpaid')));
       await tester.pumpAndSettle();
       expect(item('Rent'), findsNothing);
       expect(item('UB Loan'), findsOneWidget);
       expect(item('sleeve'), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('quick-unpaid')));
+      expect(find.text('5 shown · ₱15,576.26'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('filter-all')));
       await tester.pumpAndSettle();
       expect(item('Rent'), findsOneWidget);
       await closeApp(tester, db);
@@ -154,8 +156,8 @@ void main() {
       await BudgetRepository(db)
           .setStatus(ids.items['Electric']!, ItemStatus.charged);
       await pumpApp(tester, db);
-      expect(find.text('Charged 1 · ₱6,000.00'), findsOneWidget);
-      await tester.tap(find.byKey(const Key('quick-charged')));
+      expect(find.text('Charged 1'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('filter-charged')));
       await tester.pumpAndSettle();
       expect(item('Electric'), findsOneWidget);
       expect(item('UB Loan'), findsNothing);
@@ -168,7 +170,8 @@ void main() {
         db,
         location: '/budget/2026-11?account=${ids.accounts['UB']}',
       );
-      expect(find.text('Unpaid 2 · ₱9,000.00'), findsOneWidget);
+      expect(find.text('Unpaid 2'), findsOneWidget);
+      expect(find.text('Planned 2'), findsOneWidget);
       await closeApp(tester, db);
     });
 
