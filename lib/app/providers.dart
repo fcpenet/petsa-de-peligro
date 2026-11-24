@@ -71,6 +71,9 @@ class ShownStatuses extends Notifier<Set<ItemStatus>> {
       : {...state, status};
 
   void showAll() => state = ItemStatus.values.toSet();
+
+  /// Shows exactly [statuses].
+  void only(Set<ItemStatus> statuses) => state = {...statuses};
 }
 
 final shownStatusesProvider = NotifierProvider<ShownStatuses, Set<ItemStatus>>(

@@ -12,6 +12,7 @@ import '../features/summary/domain/account_summary.dart' show DayRange;
 import '../features/summary/ui/summary_page.dart';
 import '../features/templates/ui/template_editor_page.dart';
 import '../features/templates/ui/templates_page.dart';
+import 'side_nav.dart';
 
 GoRouter buildRouter({DateTime Function() clock = DateTime.now}) {
   String currentMonth() => BudgetRepository.yearMonthOf(clock());
@@ -28,14 +29,19 @@ GoRouter buildRouter({DateTime Function() clock = DateTime.now}) {
     routes: [
       GoRoute(path: '/', redirect: (_, _) => '/budget/${currentMonth()}'),
       ShellRoute(
-        builder: (context, state, child) =>
-            AppShell(location: state.uri.path, child: child),
+        builder: (context, state, child) => AppShell(
+          location: state.uri.path,
+          account: state.uri.queryParameters['account'],
+          child: child,
+        ),
         routes: [
           GoRoute(
             path: '/budget/:month',
             redirect: (_, state) => validMonth(state, 'budget'),
-            builder: (_, state) =>
-                BudgetPage(yearMonth: state.pathParameters['month']!),
+            builder: (_, state) => BudgetPage(
+              yearMonth: state.pathParameters['month']!,
+              accountId: state.uri.queryParameters['account'],
+            ),
           ),
           // Before '/summary/:month' so 'range' isn't taken for a month.
           GoRoute(
@@ -108,14 +114,23 @@ DayRange? _parseRange(GoRouterState state) {
   return (from: from, to: to);
 }
 
-/// Bottom navigation on phones, a side rail on wider screens.
+/// Bottom navigation on phones; on wider screens a side menu that lists the
+/// month's accounts under Budget.
 class AppShell extends StatelessWidget {
-  const AppShell({super.key, required this.location, required this.child});
+  const AppShell({
+    super.key,
+    required this.location,
+    this.account,
+    required this.child,
+  });
 
   final String location;
+
+  /// The Budget page's selected account, from `?account=`.
+  final String? account;
   final Widget child;
 
-  static const _destinations = [
+  static const List<NavDestination> _destinations = [
     (icon: Icons.receipt_long, label: 'Budget', path: 'budget'),
     (icon: Icons.insights_outlined, label: 'Summary', path: 'summary'),
     (icon: Icons.table_chart_outlined, label: 'Overview', path: 'overview'),
@@ -169,24 +184,18 @@ class AppShell extends StatelessWidget {
         ),
       );
     }
+    final onBudget = location.startsWith('/budget/');
     return Scaffold(
       body: Row(
         children: [
-          NavigationRail(
+          SideNav(
+            destinations: _destinations,
             selectedIndex: _index,
-            onDestinationSelected: (i) => _go(context, i),
-            labelType: NavigationRailLabelType.all,
-            leading: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Icon(Icons.savings, color: Color(0xFF188038), size: 32),
-            ),
-            destinations: [
-              for (final d in _destinations)
-                NavigationRailDestination(
-                  icon: Icon(d.icon, key: Key('nav-${d.path}')),
-                  label: Text(d.label),
-                ),
-            ],
+            onSelect: (i) => _go(context, i),
+            budgetMonth: onBudget ? _monthFromLocation() : null,
+            selectedAccount: onBudget ? account : null,
+            onAccount: (id) =>
+                context.go(budgetLocation(_monthFromLocation(), id)),
           ),
           const VerticalDivider(width: 1),
           Expanded(child: child),

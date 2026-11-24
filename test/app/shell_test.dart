@@ -14,9 +14,9 @@ void main() {
     await seedNovember(db);
   });
 
-  testWidgets('desktop uses a side rail', (tester) async {
+  testWidgets('desktop uses a side menu', (tester) async {
     await pumpApp(tester, db);
-    expect(find.byType(NavigationRail), findsOneWidget);
+    expect(find.byKey(const Key('side-nav')), findsOneWidget);
     expect(find.byType(NavigationBar), findsNothing);
     await closeApp(tester, db);
   });
@@ -24,7 +24,7 @@ void main() {
   testWidgets('phone uses bottom navigation', (tester) async {
     await pumpApp(tester, db, size: phone);
     expect(find.byType(NavigationBar), findsOneWidget);
-    expect(find.byType(NavigationRail), findsNothing);
+    expect(find.byKey(const Key('side-nav')), findsNothing);
     await closeApp(tester, db);
   });
 

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../app/providers.dart';
+import '../../../app/side_nav.dart';
 import '../../../core/db/database.dart';
 import '../../../core/money.dart';
 import '../../../core/ui/adaptive.dart';
@@ -17,12 +18,15 @@ import 'item_form.dart';
 import 'simple_forms.dart';
 
 /// The month as a list: totals, one section per account (collections inside
-/// their account), income.
-/// Route: `/budget/:yearMonth`.
+/// their account), income. With an account selected, just that account.
+/// Route: `/budget/:yearMonth[?account=<id>|collections]`.
 class BudgetPage extends ConsumerWidget {
-  const BudgetPage({super.key, required this.yearMonth});
+  const BudgetPage({super.key, required this.yearMonth, this.accountId});
 
   final String yearMonth;
+
+  /// Show only this account (or [collectionsFilter]); null = everything.
+  final String? accountId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -30,6 +34,7 @@ class BudgetPage extends ConsumerWidget {
       AsyncData(:final value) => BudgetView(
         key: ValueKey(value.id),
         month: value,
+        accountId: accountId,
       ),
       AsyncError(:final error) => Scaffold(
         body: Center(child: Text('Could not load the month: $error')),
@@ -40,9 +45,10 @@ class BudgetPage extends ConsumerWidget {
 }
 
 class BudgetView extends ConsumerStatefulWidget {
-  const BudgetView({super.key, required this.month});
+  const BudgetView({super.key, required this.month, this.accountId});
 
   final Month month;
+  final String? accountId;
 
   @override
   ConsumerState<BudgetView> createState() => _BudgetViewState();
@@ -167,7 +173,7 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
       appBar: AppBar(
         title: MonthSwitcher(
           yearMonth: widget.month.yearMonth,
-          onChanged: (ym) => context.go('/budget/$ym'),
+          onChanged: (ym) => context.go(budgetLocation(ym, widget.accountId)),
         ),
         centerTitle: true,
         actions: [
@@ -192,7 +198,14 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         key: const Key('add-expense'),
-        onPressed: () => showItemForm(context, monthId: _monthId),
+        onPressed: () => showItemForm(
+          context,
+          monthId: _monthId,
+          accountId:
+              accountsAsync.value?.any((a) => a.id == widget.accountId) ?? false
+              ? widget.accountId
+              : null,
+        ),
         icon: const Icon(Icons.add),
         label: const Text('Expense'),
       ),
@@ -310,91 +323,233 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
                 },
         );
 
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 760),
-        child: ListView(
+    final focusAccount = shownAccounts
+        .where((a) => a.id == widget.accountId)
+        .firstOrNull;
+    final focusCollections =
+        widget.accountId == collectionsFilter && looseCollections.isNotEmpty;
+    final chips = isNarrow(context) && (shownAccounts.isNotEmpty)
+        ? _AccountChips(
+            accounts: shownAccounts,
+            hasCollections: looseCollections.isNotEmpty,
+            selected:
+                focusAccount?.id ??
+                (focusCollections ? collectionsFilter : null),
+            onSelect: (id) =>
+                context.go(budgetLocation(widget.month.yearMonth, id)),
+          )
+        : null;
+    final filterBar = items.isEmpty
+        ? null
+        : _StatusFilterBar(
+            showCharged:
+                cardIds.isNotEmpty ||
+                StatusFilter.counts(items)[ItemStatus.charged]! > 0,
+            counts: StatusFilter.counts(items),
+            shown: filter.shown,
+            onToggle: ref.read(shownStatusesProvider.notifier).toggle,
+            onShowAll: ref.read(shownStatusesProvider.notifier).showAll,
+          );
+    const filterEmpty = Card(
+      key: Key('filter-empty'),
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Text('No expenses match the selected statuses.'),
+      ),
+    );
+
+    // The pinned bar: what's left to pay in what's shown, and quick
+    // filters for what isn't paid yet or is only charged.
+    final scopeLeaves = [
+      for (final i in items)
+        if ((childrenOf[i.id] ?? const []).isEmpty &&
+            (focusAccount != null
+                ? (i.accountId ??
+                          items
+                              .where((p) => p.id == i.parentId)
+                              .firstOrNull
+                              ?.accountId) ==
+                      focusAccount.id
+                : !focusCollections ||
+                      looseCollections.any((c) => c.id == i.parentId)))
+          i,
+    ];
+    final pinned = _LeftToPayBar(
+      leftCents: focusAccount != null
+          ? totals.byAccount[focusAccount.id]?.remainingCents ?? 0
+          : focusCollections
+          ? scopeLeaves
+                .where((i) => i.status != ItemStatus.paid)
+                .fold(0, (s, i) => s + i.amountCents)
+          : totals.remainingCents,
+      scope: focusAccount?.name ?? (focusCollections ? 'Collections' : null),
+      unpaid: scopeLeaves.where((i) => i.status != ItemStatus.paid).toList(),
+      charged: scopeLeaves
+          .where((i) => i.status == ItemStatus.charged)
+          .toList(),
+      showCharged: cardIds.isNotEmpty,
+      shown: filter.shown,
+      onOnly: ref.read(shownStatusesProvider.notifier).only,
+      onShowAll: ref.read(shownStatusesProvider.notifier).showAll,
+    );
+
+    if (focusAccount != null || focusCollections) {
+      final id = focusAccount?.id;
+      final byId = {for (final i in items) i.id: i};
+      // Sub-expenses charged here from collections in other places.
+      final elsewhere = [
+        if (id != null)
+          for (final i in items)
+            if (i.parentId != null &&
+                i.accountId == id &&
+                byId[i.parentId]?.accountId != id &&
+                filter.matches(i))
+              i,
+      ];
+      final accountTransfers = [
+        for (final t in transfers)
+          if (t.fromAccountId == id || t.toAccountId == id) t,
+      ];
+      final showMain = focusCollections
+          ? showSection(null, collections: true)
+          : showSection(focusAccount);
+      return _withPinned(
+        pinned,
+        ListView(
+          key: const Key('account-view'),
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
           children: [
-            if (items.isEmpty && incomes.isEmpty)
-              EmptyMonthBanner(month: widget.month, onMessage: _toast),
-            _SummaryCard(totals: totals),
-            if (moves.isNotEmpty && movesKey != _dismissedMoves)
-              _RebalanceCard(
-                moves: moves,
-                accountName: accountName,
-                onMoved: (m) async {
-                  await _repo.addTransfer(
-                    monthId: _monthId,
-                    fromAccountId: m.fromAccountId,
-                    toAccountId: m.toAccountId,
-                    amountCents: m.amountCents,
-                    transferredAt: DateTime.now(),
-                  );
-                  _toast(
-                    'Recorded ${formatPeso(m.amountCents)} moved to '
-                    '${accountName[m.toAccountId]}',
-                  );
-                },
-                onDismiss: () => setState(() => _dismissedMoves = movesKey),
-              ),
-            if (accounts.isEmpty)
+            ?chips,
+            ?filterBar,
+            if (showMain)
+              section(focusAccount, collections: focusCollections)
+            else if (elsewhere.isEmpty)
+              filterEmpty,
+            if (elsewhere.isNotEmpty)
               Card(
-                child: ListTile(
-                  leading: const Icon(Icons.account_balance),
-                  title: const Text('Add your first account'),
-                  subtitle: const Text(
-                    'Banks, cards and wallets you pay expenses from.',
-                  ),
-                  trailing: const Icon(Icons.add),
-                  onTap: () => showAccountForm(context),
+                key: Key('elsewhere-$id'),
+                child: Column(
+                  children: [
+                    _SectionHeader(
+                      leading: const Icon(Icons.call_split),
+                      title: 'From other collections',
+                      subtitle:
+                          'Sub-expenses charged to '
+                          '${focusAccount!.name}',
+                      trailing: formatPeso(
+                        elsewhere.fold(0, (s, i) => s + i.amountCents),
+                      ),
+                    ),
+                    for (final i in elsewhere)
+                      _ItemRow(
+                        item: i,
+                        extra: 'In ${byId[i.parentId]?.name ?? '?'}',
+                        paidFrom: accountName[i.paidFromAccountId],
+                        onToggle: () => _toggle(i, items, cardIds),
+                        onTap: () => showItemForm(
+                          context,
+                          monthId: _monthId,
+                          existing: i,
+                        ),
+                      ),
+                  ],
                 ),
               ),
-            if (items.isNotEmpty)
-              _StatusFilterBar(
-                showCharged:
-                    cardIds.isNotEmpty ||
-                    StatusFilter.counts(items)[ItemStatus.charged]! > 0,
-                counts: StatusFilter.counts(items),
-                shown: filter.shown,
-                onToggle: ref.read(shownStatusesProvider.notifier).toggle,
-                onShowAll: ref.read(shownStatusesProvider.notifier).showAll,
-              ),
-            if (nothingMatches)
-              const Card(
-                key: Key('filter-empty'),
-                child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text('No expenses match the selected statuses.'),
-                ),
-              ),
-            for (final account in shownAccounts)
-              if (showSection(account)) section(account),
-            if (looseCollections.isNotEmpty &&
-                showSection(null, collections: true))
-              section(null, collections: true),
-            if (orphans.isNotEmpty && showSection(null)) section(null),
-            if (transfers.isNotEmpty)
+            if (accountTransfers.isNotEmpty)
               _TransfersSection(
-                transfers: transfers,
+                transfers: accountTransfers,
                 accountName: accountName,
                 onEdit: (t) =>
                     showTransferForm(context, monthId: _monthId, existing: t),
               ),
-            _IncomeSection(
-              incomes: incomes,
-              totals: totals,
-              lastTopUp: {for (final t in topUps) t.incomeId: t.receivedAt},
-              onTopUp: (i) => showTopUpForm(context, income: i),
-              onEdit: (i) =>
-                  showIncomeForm(context, monthId: _monthId, existing: i),
-              onAdd: () => showIncomeForm(context, monthId: _monthId),
-            ),
           ],
         ),
+      );
+    }
+
+    return _withPinned(
+      pinned,
+      ListView(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
+        children: [
+          ?chips,
+          if (items.isEmpty && incomes.isEmpty)
+            EmptyMonthBanner(month: widget.month, onMessage: _toast),
+          _SummaryCard(totals: totals),
+          if (moves.isNotEmpty && movesKey != _dismissedMoves)
+            _RebalanceCard(
+              moves: moves,
+              accountName: accountName,
+              onMoved: (m) async {
+                await _repo.addTransfer(
+                  monthId: _monthId,
+                  fromAccountId: m.fromAccountId,
+                  toAccountId: m.toAccountId,
+                  amountCents: m.amountCents,
+                  transferredAt: DateTime.now(),
+                );
+                _toast(
+                  'Recorded ${formatPeso(m.amountCents)} moved to '
+                  '${accountName[m.toAccountId]}',
+                );
+              },
+              onDismiss: () => setState(() => _dismissedMoves = movesKey),
+            ),
+          if (accounts.isEmpty)
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.account_balance),
+                title: const Text('Add your first account'),
+                subtitle: const Text(
+                  'Banks, cards and wallets you pay expenses from.',
+                ),
+                trailing: const Icon(Icons.add),
+                onTap: () => showAccountForm(context),
+              ),
+            ),
+          ?filterBar,
+          if (nothingMatches) filterEmpty,
+          for (final account in shownAccounts)
+            if (showSection(account)) section(account),
+          if (looseCollections.isNotEmpty &&
+              showSection(null, collections: true))
+            section(null, collections: true),
+          if (orphans.isNotEmpty && showSection(null)) section(null),
+          if (transfers.isNotEmpty)
+            _TransfersSection(
+              transfers: transfers,
+              accountName: accountName,
+              onEdit: (t) =>
+                  showTransferForm(context, monthId: _monthId, existing: t),
+            ),
+          _IncomeSection(
+            incomes: incomes,
+            totals: totals,
+            lastTopUp: {for (final t in topUps) t.incomeId: t.receivedAt},
+            onTopUp: (i) => showTopUpForm(context, income: i),
+            onEdit: (i) =>
+                showIncomeForm(context, monthId: _monthId, existing: i),
+            onAdd: () => showIncomeForm(context, monthId: _monthId),
+          ),
+        ],
       ),
     );
   }
+
+  /// [pinned] stays at the top while [list] scrolls under it.
+  Widget _withPinned(Widget pinned, Widget list) => Column(
+    children: [
+      pinned,
+      Expanded(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: list,
+          ),
+        ),
+      ),
+    ],
+  );
 }
 
 // ------------------------------------------------------------------ pieces
@@ -434,7 +589,6 @@ class _SummaryCard extends StatelessWidget {
           spacing: 16,
           runSpacing: 12,
           children: [
-            stat('Left to pay', totals.remainingCents, big: true),
             stat(
               'Unbudgeted',
               totals.unbudgetedCents,
@@ -844,6 +998,119 @@ class _CollectionBlock extends StatelessWidget {
 }
 
 /// Planned / Allotted / Paid chips that narrow the list.
+/// Pinned under the app bar: what's left to pay, plus one-tap filters for
+/// everything not paid yet and for card charges whose bill isn't paid.
+class _LeftToPayBar extends StatelessWidget {
+  const _LeftToPayBar({
+    required this.leftCents,
+    required this.scope,
+    required this.unpaid,
+    required this.charged,
+    required this.showCharged,
+    required this.shown,
+    required this.onOnly,
+    required this.onShowAll,
+  });
+
+  final int leftCents;
+
+  /// The account shown, or null for the whole month.
+  final String? scope;
+  final List<BudgetItem> unpaid;
+  final List<BudgetItem> charged;
+  final bool showCharged;
+  final Set<ItemStatus> shown;
+  final ValueChanged<Set<ItemStatus>> onOnly;
+  final VoidCallback onShowAll;
+
+  static const unpaidStatuses = {
+    ItemStatus.planned,
+    ItemStatus.allotted,
+    ItemStatus.charged,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    bool same(Set<ItemStatus> a) =>
+        a.length == shown.length && a.containsAll(shown);
+    final unpaidOn = same(unpaidStatuses);
+    final chargedOn = same({ItemStatus.charged});
+    int sum(List<BudgetItem> l) => l.fold(0, (s, i) => s + i.amountCents);
+
+    return Material(
+      key: const Key('left-to-pay-bar'),
+      color: theme.colorScheme.surfaceContainer,
+      elevation: 1,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              alignment: WrapAlignment.spaceBetween,
+              children: [
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      scope == null ? 'Left to pay' : 'Left to pay · $scope',
+                      style: theme.textTheme.labelMedium,
+                    ),
+                    Text(
+                      formatPeso(leftCents),
+                      key: const Key('stat-Left to pay'),
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    FilterChip(
+                      key: const Key('quick-unpaid'),
+                      avatar: const Icon(Icons.pending_actions, size: 18),
+                      label: Text(
+                        'Unpaid ${unpaid.length} · ${formatPeso(sum(unpaid))}',
+                      ),
+                      showCheckmark: false,
+                      selected: unpaidOn,
+                      onSelected: (_) =>
+                          unpaidOn ? onShowAll() : onOnly(unpaidStatuses),
+                    ),
+                    if (showCharged || charged.isNotEmpty)
+                      FilterChip(
+                        key: const Key('quick-charged'),
+                        avatar: const Icon(Icons.credit_card, size: 18),
+                        label: Text(
+                          'Charged ${charged.length} · '
+                          '${formatPeso(sum(charged))}',
+                        ),
+                        showCheckmark: false,
+                        selected: chargedOn,
+                        onSelected: (_) => chargedOn
+                            ? onShowAll()
+                            : onOnly({ItemStatus.charged}),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _StatusFilterBar extends StatelessWidget {
   const _StatusFilterBar({
     required this.showCharged,
@@ -969,6 +1236,49 @@ class _RebalanceCard extends StatelessWidget {
 }
 
 /// Money moved between accounts this month.
+/// Phone: pick one account to show, or all.
+class _AccountChips extends StatelessWidget {
+  const _AccountChips({
+    required this.accounts,
+    required this.hasCollections,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  final List<Account> accounts;
+  final bool hasCollections;
+  final String? selected;
+  final ValueChanged<String?> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget chip(String? id, String label, {IconData? icon}) => Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        key: ValueKey('account-chip-${id ?? 'all'}'),
+        avatar: icon == null ? null : Icon(icon, size: 18),
+        label: Text(label),
+        selected: selected == id,
+        onSelected: (_) => onSelect(id),
+      ),
+    );
+    return SingleChildScrollView(
+      key: const Key('account-chips'),
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          chip(null, 'All'),
+          for (final a in accounts)
+            chip(a.id, a.name, icon: accountTypeIcons[a.type]),
+          if (hasCollections)
+            chip(collectionsFilter, 'Collections', icon: Icons.folder_outlined),
+        ],
+      ),
+    );
+  }
+}
+
 class _TransfersSection extends StatelessWidget {
   const _TransfersSection({
     required this.transfers,

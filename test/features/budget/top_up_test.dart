@@ -329,6 +329,10 @@ void main() {
       await tester.scrollUntilVisible(
         find.byKey(ValueKey('top-up-${ids.salary}')),
         400,
+        // The page also has a sideways row of account chips.
+        scrollable: find.byWidgetPredicate(
+          (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+        ),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(ValueKey('top-up-${ids.salary}')));
