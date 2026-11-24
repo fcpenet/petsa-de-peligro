@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/db/database.dart';
 import '../features/accounts/data/account_repository.dart';
 import '../features/budget/data/budget_repository.dart';
+import '../features/summary/domain/account_summary.dart' show DayRange;
 import '../features/templates/data/template_repository.dart';
 
 /// The app database. Overridden in tests with an in-memory database.
@@ -74,4 +75,18 @@ class ShownStatuses extends Notifier<Set<ItemStatus>> {
 
 final shownStatusesProvider = NotifierProvider<ShownStatuses, Set<ItemStatus>>(
   ShownStatuses.new,
+);
+
+/// Expenses that can fall in a date range, with each one's 'YYYY-MM'.
+final rangeItemsProvider =
+    StreamProvider.family<List<(BudgetItem, String)>, DayRange>(
+      (ref, range) => ref
+          .watch(budgetRepositoryProvider)
+          .watchItemsBetween(range.from, range.to),
+    );
+
+final rangeTransfersProvider = StreamProvider.family<List<Transfer>, DayRange>(
+  (ref, range) => ref
+      .watch(budgetRepositoryProvider)
+      .watchTransfersBetween(range.from, range.to),
 );

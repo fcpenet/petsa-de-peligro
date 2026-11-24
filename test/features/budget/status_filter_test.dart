@@ -66,6 +66,7 @@ void main() {
       expect(StatusFilter.counts(items), {
         ItemStatus.planned: 2, // loan, b
         ItemStatus.allotted: 0,
+        ItemStatus.charged: 0,
         ItemStatus.paid: 2, // rent, a
       });
     });

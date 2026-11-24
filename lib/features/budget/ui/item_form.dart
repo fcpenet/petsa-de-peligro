@@ -77,9 +77,10 @@ class _ItemFormState extends ConsumerState<ItemForm> {
   late String? _accountId = _existing?.accountId ?? widget.initialAccountId;
   late ItemKind _kind = _existing?.kind ?? ItemKind.expense;
   late ItemStatus _status = _existing?.status ?? ItemStatus.planned;
-  bool get _paid => _status == ItemStatus.paid;
+  bool get _paid => _effectiveStatus == ItemStatus.paid;
   late DateTime _paidAt = _existing?.paidAt ?? DateTime.now();
   late String? _paidFrom = _existing?.paidFromAccountId;
+  late DateTime _chargedAt = _existing?.chargedAt ?? DateTime.now();
 
   bool _saving = false;
   String? _error;
@@ -108,6 +109,7 @@ class _ItemFormState extends ConsumerState<ItemForm> {
     final note = _note.text.trim().isEmpty ? null : _note.text.trim();
     final parentId = _isSub ? _parentId : null;
     final collection = _isCollection && !_isSub;
+    final status = _effectiveStatus;
     final existing = _existing;
     try {
       if (existing == null) {
@@ -122,12 +124,13 @@ class _ItemFormState extends ConsumerState<ItemForm> {
           note: note,
           isCollection: collection,
         );
-        if (_status != ItemStatus.planned && !collection) {
+        if (status != ItemStatus.planned && !collection) {
           await _repo.setStatus(
             id,
-            _status,
+            status,
             paidAt: _paidAt,
             paidFromAccountId: _paidFrom,
+            chargedAt: _chargedAt,
           );
         }
       } else {
@@ -145,15 +148,18 @@ class _ItemFormState extends ConsumerState<ItemForm> {
           await _repo.setParent(existing.id, parentId);
         }
         if (!collection &&
-            (_status != existing.status ||
-                (_paid &&
+            (status != existing.status ||
+                (status == ItemStatus.paid &&
                     (!_sameDay(_paidAt, existing.paidAt) ||
-                        _paidFrom != existing.paidFromAccountId)))) {
+                        _paidFrom != existing.paidFromAccountId)) ||
+                (status == ItemStatus.charged &&
+                    !_sameDay(_chargedAt, existing.chargedAt)))) {
           await _repo.setStatus(
             existing.id,
-            _status,
+            status,
             paidAt: _paidAt,
             paidFromAccountId: _paidFrom,
+            chargedAt: _chargedAt,
           );
         }
       }
@@ -189,6 +195,35 @@ class _ItemFormState extends ConsumerState<ItemForm> {
         _error = 'Could not delete: $e';
       });
     }
+  }
+
+  /// Whether this expense is paid from a credit card (its own account, or
+  /// its collection's), which allows the Charged status.
+  bool _onCard() {
+    final accounts = ref.read(accountsProvider).value ?? const <Account>[];
+    final items =
+        ref.read(itemsProvider(widget.monthId)).value ?? const <BudgetItem>[];
+    final parentAccount = _isSub
+        ? items.where((i) => i.id == _parentId).firstOrNull?.accountId
+        : null;
+    final id = _accountId ?? parentAccount;
+    return accounts.any((a) => a.id == id && a.type == AccountType.creditCard);
+  }
+
+  /// [_status], except Charged falls back to Allotted off a card.
+  ItemStatus get _effectiveStatus => _status == ItemStatus.charged && !_onCard()
+      ? ItemStatus.allotted
+      : _status;
+
+  Future<void> _pickChargeDate() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _chargedAt,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      helpText: 'Date charged',
+    );
+    if (date != null) setState(() => _chargedAt = date);
   }
 
   Future<void> _pickDate() async {
@@ -414,39 +449,59 @@ class _ItemFormState extends ConsumerState<ItemForm> {
             const SizedBox(height: 4),
             SegmentedButton<ItemStatus>(
               key: const Key('field-status'),
-              segments: const [
-                ButtonSegment(
+              showSelectedIcon: false,
+              segments: [
+                const ButtonSegment(
                   value: ItemStatus.planned,
                   label: Text('Planned', key: Key('status-planned')),
                 ),
-                ButtonSegment(
+                const ButtonSegment(
                   value: ItemStatus.allotted,
                   label: Text('Allotted', key: Key('status-allotted')),
                 ),
-                ButtonSegment(
+                if (_onCard())
+                  const ButtonSegment(
+                    value: ItemStatus.charged,
+                    label: Text('Charged', key: Key('status-charged')),
+                  ),
+                const ButtonSegment(
                   value: ItemStatus.paid,
                   label: Text('Paid', key: Key('status-paid')),
                 ),
               ],
-              selected: {_status},
+              selected: {_effectiveStatus},
               onSelectionChanged: (s) => setState(() => _status = s.first),
             ),
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Text(
-                switch (_status) {
+                switch (_effectiveStatus) {
                   ItemStatus.planned =>
-                    'Budgeted; the money isn’t in the '
-                        'account yet',
+                    'Budgeted; the money isn’t in the account yet',
                   ItemStatus.allotted =>
-                    'The money is in the account, '
-                        'waiting to be paid',
-                  ItemStatus.paid => 'Paid on ${formatShortDate(_paidAt)}',
+                    'The money is in the account, waiting to be paid',
+                  ItemStatus.charged =>
+                    'Charged on ${formatShortDate(_chargedAt)}; the card '
+                        'bill isn’t paid yet',
+                  ItemStatus.paid =>
+                    _onCard()
+                        ? 'Card bill paid on ${formatShortDate(_paidAt)}'
+                        : 'Paid on ${formatShortDate(_paidAt)}',
                 },
                 key: const Key('status-help'),
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
+            if (_effectiveStatus == ItemStatus.charged)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  key: const Key('field-charged-date'),
+                  onPressed: _pickChargeDate,
+                  icon: const Icon(Icons.event),
+                  label: const Text('Change charge date'),
+                ),
+              ),
             if (_paid) ...[
               Align(
                 alignment: Alignment.centerLeft,

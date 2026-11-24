@@ -13,6 +13,7 @@ class AccountTotals {
     required this.allottedCents,
     required this.paidCents,
     this.plannedCents = 0,
+    this.chargedCents = 0,
   });
 
   /// Everything budgeted from this account, whatever its status.
@@ -21,6 +22,9 @@ class AccountTotals {
 
   /// Still planned: the money hasn't been moved into the account yet.
   final int plannedCents;
+
+  /// Charged to a card, bill not settled yet.
+  final int chargedCents;
 
   /// Not paid yet (planned or allotted) — the per-account number from the
   /// sheet.
@@ -75,6 +79,7 @@ class MonthTotals {
     required this.paidCents,
     required this.remainingCents,
     this.plannedCents = 0,
+    this.chargedCents = 0,
     required this.slackCents,
     required this.byAccount,
     required this.byParent,
@@ -118,6 +123,9 @@ class MonthTotals {
 
   /// Still planned: money not yet moved into the accounts ("to allot").
   final int plannedCents;
+
+  /// Charged to cards, bills not settled yet.
+  final int chargedCents;
 
   /// Unused parent budget caps.
   final int slackCents;
@@ -231,7 +239,9 @@ MonthTotals computeMonthTotals({
   final accountAllotted = <String?, int>{};
   final accountPaid = <String?, int>{};
   final accountPlanned = <String?, int>{};
+  final accountCharged = <String?, int>{};
   var planned = 0;
+  var charged = 0;
   // Planned minus actually paid, per account; becomes balanceByAccount.
   final balance = <String, int>{};
   void shift(String? account, int cents) {
@@ -265,6 +275,14 @@ MonthTotals computeMonthTotals({
       }
     } else {
       remaining += item.amountCents;
+      if (item.status == ItemStatus.charged) {
+        charged += item.amountCents;
+        accountCharged.update(
+          account,
+          (v) => v + item.amountCents,
+          ifAbsent: () => item.amountCents,
+        );
+      }
       if (item.status == ItemStatus.planned) {
         planned += item.amountCents;
         accountPlanned.update(
@@ -348,6 +366,7 @@ MonthTotals computeMonthTotals({
     paidCents: paid,
     remainingCents: remaining,
     plannedCents: planned,
+    chargedCents: charged,
     slackCents: slack,
     byAccount: {
       for (final id in accountAllotted.keys)
@@ -355,6 +374,7 @@ MonthTotals computeMonthTotals({
           allottedCents: accountAllotted[id]!,
           paidCents: accountPaid[id] ?? 0,
           plannedCents: accountPlanned[id] ?? 0,
+          chargedCents: accountCharged[id] ?? 0,
         ),
     },
     byParent: byParent,

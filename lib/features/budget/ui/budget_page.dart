@@ -66,10 +66,21 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _toggle(BudgetItem item, List<BudgetItem> items) {
-    final status = item.status == ItemStatus.paid
-        ? ItemStatus.allotted
-        : ItemStatus.paid;
+  /// Checkbox tap. Card expenses go empty → charged → paid (unticking a
+  /// paid one leaves it charged); everything else toggles paid / allotted.
+  void _toggle(BudgetItem item, List<BudgetItem> items, Set<String> cards) {
+    final account =
+        item.accountId ??
+        items.where((i) => i.id == item.parentId).firstOrNull?.accountId;
+    final onCard =
+        cards.contains(account) &&
+        !item.isCollection &&
+        !items.any((i) => i.parentId == item.id);
+    final status = switch (item.status) {
+      ItemStatus.paid => onCard ? ItemStatus.charged : ItemStatus.allotted,
+      ItemStatus.charged => ItemStatus.paid,
+      _ => onCard ? ItemStatus.charged : ItemStatus.paid,
+    };
     final now = DateTime.now();
     final patches = planStatusChange(
       ItemFamily(items),
@@ -81,7 +92,13 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
     final changes = {
       for (final MapEntry(key: id, value: patch) in patches.entries)
         if (items.where((i) => i.id == id).firstOrNull case final i?)
-          id: i.copyWith(status: patch.status, paidAt: Value(patch.paidAt)),
+          id: i.copyWith(
+            status: patch.status,
+            paidAt: Value(patch.paidAt),
+            chargedAt: status == ItemStatus.charged && id == item.id
+                ? Value(now)
+                : Value(i.chargedAt),
+          ),
     };
     setState(() {
       _overrides.addAll(changes);
@@ -207,6 +224,10 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
         if (!a.archived || used.contains(a.id)) a,
     ];
     final accountName = {for (final a in accounts) a.id: a.name};
+    final cardIds = {
+      for (final a in accounts)
+        if (a.type == AccountType.creditCard) a.id,
+    };
     final childrenOf = <String, List<BudgetItem>>{
       for (final i in items)
         if (i.isCollection) i.id: [],
@@ -258,7 +279,7 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
           childrenOf: visibleChildren,
           totals: totals,
           accountName: accountName,
-          onToggle: (i) => _toggle(i, items),
+          onToggle: (i) => _toggle(i, items, cardIds),
           onEdit: (i) => showItemForm(context, monthId: _monthId, existing: i),
           onAdd: account == null
               ? null
@@ -276,6 +297,15 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
                   _toast(
                     'Marked $n expense${n == 1 ? '' : 's'} in '
                     '${account.name} as allotted',
+                  );
+                },
+          onSettle: account == null || !cardIds.contains(account.id)
+              ? null
+              : () async {
+                  final n = await _repo.settleCard(_monthId, account.id);
+                  _toast(
+                    'Paid the ${account.name} bill: $n '
+                    'expense${n == 1 ? '' : 's'}',
                   );
                 },
         );
@@ -322,6 +352,9 @@ class _BudgetViewState extends ConsumerState<BudgetView> {
               ),
             if (items.isNotEmpty)
               _StatusFilterBar(
+                showCharged:
+                    cardIds.isNotEmpty ||
+                    StatusFilter.counts(items)[ItemStatus.charged]! > 0,
                 counts: StatusFilter.counts(items),
                 shown: filter.shown,
                 onToggle: ref.read(shownStatusesProvider.notifier).toggle,
@@ -412,6 +445,8 @@ class _SummaryCard extends StatelessWidget {
             stat('Received', totals.receivedCents),
             stat('Expenses', totals.allottedCents),
             stat('To allot', totals.plannedCents),
+            if (totals.chargedCents > 0)
+              stat('Card bills', totals.chargedCents),
             stat('Paid', totals.paidCents),
           ],
         ),
@@ -450,6 +485,10 @@ class _ItemRow extends StatelessWidget {
       ?extra,
       if (item.kind != ItemKind.expense) itemKindLabels[item.kind]!,
       if (item.status == ItemStatus.planned) 'Planned',
+      if (item.status == ItemStatus.charged)
+        item.chargedAt == null
+            ? 'Charged'
+            : 'Charged ${formatShortDate(item.chargedAt!)}',
       if (paid && paidFrom != null) 'Paid from $paidFrom',
       if (paid && item.paidAt != null)
         'Paid ${formatShortDate(item.paidAt!)}'
@@ -460,9 +499,15 @@ class _ItemRow extends StatelessWidget {
     return ListTile(
       key: ValueKey('item-${item.id}'),
       contentPadding: EdgeInsets.only(left: 4 + indent, right: 16),
+      // A dash means charged to a card, bill not paid yet.
       leading: Checkbox(
         key: ValueKey('paid-${item.id}'),
-        value: paid,
+        tristate: true,
+        value: paid
+            ? true
+            : item.status == ItemStatus.charged
+            ? null
+            : false,
         onChanged: (_) => onToggle(),
       ),
       title: Text(
@@ -527,6 +572,7 @@ class _AccountSection extends StatelessWidget {
     required this.onAdd,
     required this.onAddSub,
     this.onAllot,
+    this.onSettle,
   });
 
   final Account? account;
@@ -546,6 +592,9 @@ class _AccountSection extends StatelessWidget {
 
   /// Marks everything planned for this account as allotted.
   final VoidCallback? onAllot;
+
+  /// For a credit card: pays the bill (charged → paid).
+  final VoidCallback? onSettle;
 
   @override
   Widget build(BuildContext context) {
@@ -614,6 +663,27 @@ class _AccountSection extends StatelessWidget {
                     onPressed: onAllot,
                     icon: const Icon(Icons.move_down, size: 18),
                     label: const Text('Allot'),
+                  ),
+                ],
+              ),
+            ),
+          if ((totals.byAccount[account?.id]?.chargedCents ?? 0) case final bill
+              when bill > 0 && onSettle != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 16, right: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${formatPeso(bill)} charged, bill not paid yet',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  FilledButton.tonalIcon(
+                    key: ValueKey('settle-${account!.id}'),
+                    onPressed: onSettle,
+                    icon: const Icon(Icons.credit_score, size: 18),
+                    label: const Text('Pay bill'),
                   ),
                 ],
               ),
@@ -694,7 +764,12 @@ class _CollectionBlock extends StatelessWidget {
               contentPadding: const EdgeInsets.only(left: 0, right: 12),
               leading: Checkbox(
                 key: ValueKey('paid-${collection.id}'),
-                value: paid,
+                tristate: true,
+                value: paid
+                    ? true
+                    : collection.status == ItemStatus.charged
+                    ? null
+                    : false,
                 onChanged: (_) => onToggle(collection),
               ),
               title: Row(
@@ -771,12 +846,15 @@ class _CollectionBlock extends StatelessWidget {
 /// Planned / Allotted / Paid chips that narrow the list.
 class _StatusFilterBar extends StatelessWidget {
   const _StatusFilterBar({
+    required this.showCharged,
     required this.counts,
     required this.shown,
     required this.onToggle,
     required this.onShowAll,
   });
 
+  /// Charged only applies to credit cards.
+  final bool showCharged;
   final Map<ItemStatus, int> counts;
   final Set<ItemStatus> shown;
   final ValueChanged<ItemStatus> onToggle;
@@ -785,6 +863,7 @@ class _StatusFilterBar extends StatelessWidget {
   static const _labels = {
     ItemStatus.planned: 'Planned',
     ItemStatus.allotted: 'Allotted',
+    ItemStatus.charged: 'Charged',
     ItemStatus.paid: 'Paid',
   };
 
@@ -799,12 +878,13 @@ class _StatusFilterBar extends StatelessWidget {
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           for (final s in ItemStatus.values)
-            FilterChip(
-              key: Key('filter-${s.name}'),
-              label: Text('${_labels[s]} (${counts[s] ?? 0})'),
-              selected: shown.contains(s),
-              onSelected: (_) => onToggle(s),
-            ),
+            if (s != ItemStatus.charged || showCharged)
+              FilterChip(
+                key: Key('filter-${s.name}'),
+                label: Text('${_labels[s]} (${counts[s] ?? 0})'),
+                selected: shown.contains(s),
+                onSelected: (_) => onToggle(s),
+              ),
           if (filtering)
             TextButton(
               key: const Key('filter-all'),

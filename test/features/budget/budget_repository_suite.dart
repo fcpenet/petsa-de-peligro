@@ -82,6 +82,99 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
       expect(await repo.incomesFor(dec), hasLength(1));
     });
 
+    test('itemsBetween finds expenses by month, payment and parent', () async {
+      final misc = await repo.addItem(
+        monthId: monthId,
+        name: 'Misc',
+        amountCents: 0,
+        accountId: wallet,
+        isCollection: true,
+      );
+      final child = await repo.addItem(
+        monthId: monthId,
+        name: 'pliers',
+        amountCents: 1,
+        parentId: misc,
+      );
+      final oct = (await repo.ensureMonth('2026-10')).id;
+      final late = await repo.addItem(
+        monthId: oct,
+        name: 'paid late',
+        amountCents: 1,
+        accountId: wallet,
+      );
+      await repo.addItem(
+        monthId: oct,
+        name: 'october only',
+        amountCents: 1,
+        accountId: wallet,
+      );
+      await repo.setStatus(
+        late,
+        ItemStatus.paid,
+        paidAt: DateTime(2026, 11, 3, 22),
+      );
+      await repo.addTransfer(
+        monthId: oct,
+        fromAccountId: wallet,
+        toAccountId: await accounts.createAccount(
+          name: 'Other',
+          type: AccountType.bank,
+        ),
+        amountCents: 1,
+        transferredAt: DateTime(2026, 11, 30, 23),
+      );
+
+      final rows = await repo.itemsBetween(
+        DateTime(2026, 11, 1),
+        DateTime(2026, 11, 30),
+      );
+      final names = {for (final (i, ym) in rows) i.name: ym};
+      expect(names, {
+        'Misc': '2026-11',
+        'pliers': '2026-11',
+        'paid late': '2026-10',
+      });
+
+      // Charged in the range from another month (needs a card).
+      final card = await accounts.createAccount(
+        name: 'Card',
+        type: AccountType.creditCard,
+      );
+      final charged = await repo.addItem(
+        monthId: oct,
+        name: 'charged late',
+        amountCents: 1,
+        accountId: card,
+      );
+      await repo.setStatus(
+        charged,
+        ItemStatus.charged,
+        chargedAt: DateTime(2026, 11, 5),
+      );
+      final again = await repo.itemsBetween(
+        DateTime(2026, 11, 1),
+        DateTime(2026, 11, 30),
+      );
+      expect(again.map((r) => r.$1.name), contains('charged late'));
+      expect(rows.map((r) => r.$1.id), contains(child));
+      // Transfers by day, whichever month they're filed under.
+      expect(
+        await repo.transfersBetween(
+          DateTime(2026, 11, 30),
+          DateTime(2026, 11, 30),
+        ),
+        hasLength(1),
+      );
+      expect(
+        await repo.transfersBetween(
+          DateTime(2026, 12, 1),
+          DateTime(2026, 12, 31),
+        ),
+        isEmpty,
+      );
+    });
+
     test('ensureMonth rejects malformed months', () {
       for (final bad in ['2026-13', '2026-1', 'nov', '2026-00']) {
         expect(
@@ -949,6 +1042,134 @@ void budgetRepositoryTests(Future<AppDatabase> Function() openDb) {
       expect(item.status, ItemStatus.planned);
       expect(item.paidAt, isNull);
       expect(item.paidFromAccountId, isNull);
+    });
+  });
+
+  group('charged (credit cards)', () {
+    late String card;
+    late String bank;
+    late String netflix;
+
+    setUp(() async {
+      card = await accounts.createAccount(
+        name: 'JCB',
+        type: AccountType.creditCard,
+      );
+      bank = await accounts.createAccount(name: 'UB', type: AccountType.bank);
+      netflix = await repo.addItem(
+        monthId: monthId,
+        name: 'Netflix',
+        amountCents: php(549),
+        accountId: card,
+      );
+    });
+
+    test('a card expense can be charged, with the charge date', () async {
+      await repo.setStatus(
+        netflix,
+        ItemStatus.charged,
+        chargedAt: DateTime(2026, 11, 10),
+      );
+      final item = await repo.item(netflix);
+      expect(item.status, ItemStatus.charged);
+      expect(item.chargedAt, DateTime(2026, 11, 10));
+      expect(item.paidAt, isNull);
+      final totals = await repo.totalsFor(monthId);
+      expect(totals.chargedCents, php(549));
+      expect(totals.byAccount[card]!.chargedCents, php(549));
+      expect(totals.remainingCents, php(549)); // still to pay
+    });
+
+    test('only card expenses, and not collections, can be charged', () async {
+      final rent = await repo.addItem(
+        monthId: monthId,
+        name: 'Rent',
+        amountCents: 1,
+        accountId: bank,
+      );
+      expect(
+        () => repo.setStatus(rent, ItemStatus.charged),
+        throwsA(isA<BudgetException>()),
+      );
+      final misc = await repo.addItem(
+        monthId: monthId,
+        name: 'Misc',
+        amountCents: 0,
+        accountId: card,
+        isCollection: true,
+      );
+      expect(
+        () => repo.setStatus(misc, ItemStatus.charged),
+        throwsA(isA<BudgetException>()),
+      );
+      // A sub-expense that uses its card collection's account can be.
+      final child = await repo.addItem(
+        monthId: monthId,
+        name: 'mug',
+        amountCents: 1,
+        parentId: misc,
+      );
+      await repo.setStatus(child, ItemStatus.charged);
+      expect(await statusOf(misc), ItemStatus.charged);
+    });
+
+    test('paying keeps the charge date; going back clears it', () async {
+      await repo.setStatus(
+        netflix,
+        ItemStatus.charged,
+        chargedAt: DateTime(2026, 11, 10),
+      );
+      await repo.setStatus(netflix, ItemStatus.paid);
+      expect((await repo.item(netflix)).chargedAt, DateTime(2026, 11, 10));
+      await repo.setStatus(netflix, ItemStatus.charged);
+      expect((await repo.item(netflix)).status, ItemStatus.charged);
+      await repo.setStatus(netflix, ItemStatus.allotted);
+      expect((await repo.item(netflix)).chargedAt, isNull);
+    });
+
+    test('settleCard pays every charged expense on that card', () async {
+      final spotify = await repo.addItem(
+        monthId: monthId,
+        name: 'Spotify',
+        amountCents: php(149),
+        accountId: card,
+      );
+      final notYet = await repo.addItem(
+        monthId: monthId,
+        name: 'Later',
+        amountCents: 1,
+        accountId: card,
+      );
+      final misc = await repo.addItem(
+        monthId: monthId,
+        name: 'Misc',
+        amountCents: 0,
+        accountId: bank,
+        isCollection: true,
+      );
+      final onCard = await repo.addItem(
+        monthId: monthId,
+        name: 'pliers',
+        amountCents: 1,
+        accountId: card,
+        parentId: misc,
+      );
+      for (final id in [netflix, spotify, onCard]) {
+        await repo.setStatus(id, ItemStatus.charged);
+      }
+      expect(
+        await repo.settleCard(monthId, card, paidAt: DateTime(2026, 11, 28)),
+        3,
+      );
+      for (final id in [netflix, spotify, onCard]) {
+        final item = await repo.item(id);
+        expect(item.status, ItemStatus.paid);
+        expect(item.paidAt, DateTime(2026, 11, 28));
+      }
+      expect(await statusOf(notYet), ItemStatus.planned);
+      expect(await statusOf(misc), ItemStatus.paid);
+      expect((await repo.totalsFor(monthId)).chargedCents, 0);
+      expect(await repo.settleCard(monthId, card), 0);
     });
   });
 }

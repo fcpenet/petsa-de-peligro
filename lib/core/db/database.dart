@@ -26,7 +26,7 @@ class AppDatabase extends _$AppDatabase {
   factory AppDatabase.open() => AppDatabase(defaultExecutor());
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -48,6 +48,7 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(items, items.paidFromAccountId);
         await m.createTable(transfers);
       }
+      if (from < 6) await m.addColumn(items, items.chargedAt);
     },
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');

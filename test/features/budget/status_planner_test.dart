@@ -208,6 +208,43 @@ void main() {
     });
   });
 
+  group('charged', () {
+    test('a collection with a charged card purchase is charged', () {
+      expect(
+        deriveParentStatus([ItemStatus.paid, ItemStatus.charged]),
+        ItemStatus.charged,
+      );
+      expect(
+        deriveParentStatus([ItemStatus.charged, ItemStatus.allotted]),
+        ItemStatus.allotted,
+      );
+    });
+
+    test('un-paying a collection takes charged ones back too', () {
+      final family = [
+        item('misc', status: ItemStatus.paid),
+        item('a', parent: 'misc', status: ItemStatus.paid),
+        item('b', parent: 'misc', status: ItemStatus.charged),
+      ];
+      expect(plan(family, 'misc', ItemStatus.allotted), {
+        'misc': allotted,
+        'a': allotted,
+        'b': allotted,
+      });
+    });
+
+    test('paying a collection pays charged ones', () {
+      final family = [
+        item('misc', status: ItemStatus.charged),
+        item('a', parent: 'misc', status: ItemStatus.charged),
+      ];
+      expect(plan(family, 'misc', ItemStatus.paid), {
+        'misc': paidOn(_payDay),
+        'a': paidOn(_payDay),
+      });
+    });
+  });
+
   group('planParentRederive', () {
     test('null when the parent has no children', () {
       final family = ItemFamily([item('misc', status: ItemStatus.paid)]);

@@ -215,7 +215,11 @@ void main() {
     final raw = sqlite.sqlite3.open(file.path)
       ..execute('DROP TABLE income_top_ups')
       ..execute('DROP TABLE transfers');
-    dropColumns(raw, 'items', ['is_collection', 'paid_from_account_id']);
+    dropColumns(raw, 'items', [
+      'is_collection',
+      'paid_from_account_id',
+      'charged_at',
+    ]);
     raw
       ..execute('PRAGMA user_version = 2')
       ..close();

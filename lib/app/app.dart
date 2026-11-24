@@ -8,6 +8,7 @@ import '../features/accounts/ui/accounts_page.dart';
 import '../features/budget/data/budget_repository.dart';
 import '../features/budget/ui/budget_page.dart';
 import '../features/sheet/ui/overview_page.dart';
+import '../features/summary/domain/account_summary.dart' show DayRange;
 import '../features/summary/ui/summary_page.dart';
 import '../features/templates/ui/template_editor_page.dart';
 import '../features/templates/ui/templates_page.dart';
@@ -35,6 +36,15 @@ GoRouter buildRouter({DateTime Function() clock = DateTime.now}) {
             redirect: (_, state) => validMonth(state, 'budget'),
             builder: (_, state) =>
                 BudgetPage(yearMonth: state.pathParameters['month']!),
+          ),
+          // Before '/summary/:month' so 'range' isn't taken for a month.
+          GoRoute(
+            path: '/summary/range',
+            redirect: (_, state) => _parseRange(state) == null
+                ? '/summary/${currentMonth()}'
+                : null,
+            builder: (_, state) =>
+                SummaryPage.range(range: _parseRange(state)!),
           ),
           GoRoute(
             path: '/summary/:month',
@@ -78,6 +88,24 @@ GoRouter buildRouter({DateTime Function() clock = DateTime.now}) {
       ),
     ],
   );
+}
+
+/// `?from=YYYY-MM-DD&to=YYYY-MM-DD` → an inclusive day range, or null when
+/// missing, malformed or backwards.
+DayRange? _parseRange(GoRouterState state) {
+  DateTime? day(String key) {
+    final text = state.uri.queryParameters[key];
+    if (text == null || !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(text)) {
+      return null;
+    }
+    final d = DateTime.tryParse(text);
+    return d == null ? null : DateTime(d.year, d.month, d.day);
+  }
+
+  final from = day('from');
+  final to = day('to');
+  if (from == null || to == null || to.isBefore(from)) return null;
+  return (from: from, to: to);
 }
 
 /// Bottom navigation on phones, a side rail on wider screens.

@@ -429,11 +429,15 @@ class BudgetRepository {
   /// [paidFromAccountId] records that the item was paid from another account
   /// than planned; null (or the planned account) means as planned. Marking
   /// an item allotted clears it.
+  ///
+  /// [ItemStatus.charged] is only for credit-card expenses (not
+  /// collections); [chargedAt] is the day it was charged (default now).
   Future<void> setStatus(
     String id,
     ItemStatus status, {
     DateTime? paidAt,
     String? paidFromAccountId,
+    DateTime? chargedAt,
   }) async {
     final now = _now();
     final family = await _family(id);
@@ -449,6 +453,16 @@ class BudgetRepository {
       throw BudgetException(
         'Set “paid from” on the sub-expenses, not the collection',
       );
+    }
+    if (status == ItemStatus.charged) {
+      if (item.isCollection || family.childrenOf(id).isNotEmpty) {
+        throw BudgetException(
+          'Mark the sub-expenses as charged, not the collection',
+        );
+      }
+      if (!await _isCard(planned)) {
+        throw BudgetException('Only credit-card expenses can be charged');
+      }
     }
 
     final patches = planStatusChange(
@@ -469,7 +483,71 @@ class BudgetRepository {
           where: (i) => i.id.equals(id),
         );
       }
+      if (status == ItemStatus.charged) {
+        b.update(
+          _db.items,
+          ItemsCompanion(chargedAt: Value(chargedAt ?? now)),
+          where: (i) => i.id.equals(id),
+        );
+      }
     });
+  }
+
+  Future<bool> _isCard(String? accountId) async {
+    if (accountId == null) return false;
+    final account = await (_db.select(
+      _db.accounts,
+    )..where((a) => a.id.equals(accountId))).getSingleOrNull();
+    return account?.type == AccountType.creditCard;
+  }
+
+  /// Pays the card bill: every charged expense on [cardAccountId] in
+  /// [monthId] becomes paid on [paidAt] (default now). Collections follow.
+  /// Returns how many expenses changed.
+  Future<int> settleCard(
+    String monthId,
+    String cardAccountId, {
+    DateTime? paidAt,
+  }) async {
+    final now = _now();
+    final when = paidAt ?? now;
+    final items = await itemsFor(monthId);
+    final byId = {for (final i in items) i.id: i};
+    final targets = [
+      for (final i in items)
+        if (i.status == ItemStatus.charged &&
+            (i.accountId ??
+                    (i.parentId == null
+                        ? null
+                        : byId[i.parentId]?.accountId)) ==
+                cardAccountId)
+          i,
+    ];
+    if (targets.isEmpty) return 0;
+    final changed = {for (final t in targets) t.id};
+    final parents = {for (final t in targets) ?t.parentId};
+    final family = ItemFamily([
+      for (final i in items)
+        changed.contains(i.id)
+            ? i.copyWith(status: ItemStatus.paid, paidAt: Value(when))
+            : i,
+    ]);
+    await _db.batch((b) {
+      b.update(
+        _db.items,
+        ItemsCompanion(
+          status: const Value(ItemStatus.paid),
+          paidAt: Value(when),
+          updatedAt: Value(now),
+        ),
+        where: (i) => i.id.isIn(changed),
+      );
+      for (final p in parents) {
+        final patch = planParentRederive(family, p, now: now);
+        if (patch != null) _writePatch(b, p, patch, now);
+      }
+    });
+    return targets.length;
   }
 
   /// Marks everything still planned to be paid from [accountId] as allotted
@@ -577,6 +655,74 @@ class BudgetRepository {
       transfers: transfers,
     );
   }
+
+  // ------------------------------------------------------------- date range
+
+  /// Expenses that can fall between [from] and [to] (inclusive days), from
+  /// any month: those in the months the range touches, those paid or
+  /// charged in it, and the collections they belong to. Callers pick the exact ones with
+  /// `itemDate`. Also returns each month id's 'YYYY-MM'.
+  Selectable<(BudgetItem, String)> _rangeItemsQuery(
+    DateTime from,
+    DateTime to,
+  ) {
+    final end = DateTime(to.year, to.month, to.day + 1);
+    return _db
+        .customSelect(
+          'WITH hits AS ('
+          '  SELECT i.id, i.parent_id FROM items i'
+          '  JOIN months m ON m.id = i.month_id'
+          '  WHERE i.deleted_at IS NULL AND ('
+          '    m.year_month BETWEEN ?1 AND ?2'
+          '    OR (i.paid_at >= ?3 AND i.paid_at < ?4)'
+          '    OR (i.charged_at >= ?3 AND i.charged_at < ?4))'
+          ') '
+          'SELECT items.*, m.year_month AS ym FROM items'
+          '  JOIN months m ON m.id = items.month_id'
+          '  WHERE items.deleted_at IS NULL AND ('
+          '    items.id IN (SELECT id FROM hits)'
+          '    OR items.id IN (SELECT parent_id FROM hits))',
+          variables: [
+            Variable.withString(yearMonthOf(from)),
+            Variable.withString(yearMonthOf(to)),
+            Variable.withDateTime(DateTime(from.year, from.month, from.day)),
+            Variable.withDateTime(end),
+          ],
+          readsFrom: {_db.items, _db.months},
+        )
+        .map((row) => (_db.items.map(row.data), row.read<String>('ym')));
+  }
+
+  Future<List<(BudgetItem, String)>> itemsBetween(DateTime from, DateTime to) =>
+      _rangeItemsQuery(from, to).get();
+
+  Stream<List<(BudgetItem, String)>> watchItemsBetween(
+    DateTime from,
+    DateTime to,
+  ) => _rangeItemsQuery(from, to).watch();
+
+  /// Transfers made between [from] and [to] (inclusive days), any month.
+  SimpleSelectStatement<$TransfersTable, Transfer> _rangeTransfersQuery(
+    DateTime from,
+    DateTime to,
+  ) => _db.select(_db.transfers)
+    ..where(
+      (t) =>
+          t.deletedAt.isNull() &
+          t.transferredAt.isBiggerOrEqualValue(
+            DateTime(from.year, from.month, from.day),
+          ) &
+          t.transferredAt.isSmallerThanValue(
+            DateTime(to.year, to.month, to.day + 1),
+          ),
+    )
+    ..orderBy([(t) => OrderingTerm(expression: t.transferredAt)]);
+
+  Future<List<Transfer>> transfersBetween(DateTime from, DateTime to) =>
+      _rangeTransfersQuery(from, to).get();
+
+  Stream<List<Transfer>> watchTransfersBetween(DateTime from, DateTime to) =>
+      _rangeTransfersQuery(from, to).watch();
 
   // -------------------------------------------------------------- transfers
 
@@ -695,6 +841,10 @@ class BudgetRepository {
         paidFromAccountId: patch.status == ItemStatus.paid
             ? const Value.absent()
             : const Value(null),
+        // Charged and paid keep the charge date; earlier statuses clear it.
+        chargedAt: patch.status.isBefore(ItemStatus.charged)
+            ? const Value(null)
+            : const Value.absent(),
         updatedAt: Value(now),
       ),
       where: (i) => i.id.equals(id),

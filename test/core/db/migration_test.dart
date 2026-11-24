@@ -50,7 +50,11 @@ void main() {
     );
     await seed.close();
     final raw = sqlite.sqlite3.open(file.path)..execute('DROP TABLE transfers');
-    dropColumns(raw, 'items', ['is_collection', 'paid_from_account_id']);
+    dropColumns(raw, 'items', [
+      'is_collection',
+      'paid_from_account_id',
+      'charged_at',
+    ]);
     raw
       ..execute('PRAGMA user_version = 3')
       ..close();
@@ -91,7 +95,7 @@ void main() {
     await repo.setStatus(electric, ItemStatus.paid);
     await seed.close();
     final raw = sqlite.sqlite3.open(file.path)..execute('DROP TABLE transfers');
-    dropColumns(raw, 'items', ['paid_from_account_id']);
+    dropColumns(raw, 'items', ['paid_from_account_id', 'charged_at']);
     raw
       ..execute('PRAGMA user_version = 4')
       ..close();
@@ -112,5 +116,39 @@ void main() {
       transferredAt: DateTime(2026, 11, 18),
     );
     expect((await r.totalsFor(month)).balanceByAccount, isEmpty);
+  });
+
+  test('version 5 gains the charge date', () async {
+    final dir = Directory.systemTemp.createTempSync('petsa-v5');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final file = File('${dir.path}/petsa.db');
+
+    final seed = AppDatabase(NativeDatabase(file));
+    final repo = BudgetRepository(seed);
+    final month = (await repo.ensureMonth('2026-11')).id;
+    final card = await AccountRepository(seed)
+        .createAccount(name: 'JCB', type: AccountType.creditCard);
+    final netflix = await repo.addItem(
+      monthId: month,
+      name: 'Netflix',
+      amountCents: 1,
+      accountId: card,
+    );
+    await seed.close();
+    final raw = sqlite.sqlite3.open(file.path);
+    dropColumns(raw, 'items', ['charged_at']);
+    raw
+      ..execute('PRAGMA user_version = 5')
+      ..close();
+
+    final upgraded = AppDatabase(NativeDatabase(file));
+    addTearDown(upgraded.close);
+    final r = BudgetRepository(upgraded);
+    await r.setStatus(
+      netflix,
+      ItemStatus.charged,
+      chargedAt: DateTime(2026, 11, 9),
+    );
+    expect((await r.item(netflix)).chargedAt, DateTime(2026, 11, 9));
   });
 }

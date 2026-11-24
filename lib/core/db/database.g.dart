@@ -2317,6 +2317,17 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, BudgetItem> {
     type: DriftSqlType.dateTime,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _chargedAtMeta = const VerificationMeta(
+    'chargedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> chargedAt = GeneratedColumn<DateTime>(
+    'charged_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _paidFromAccountIdMeta = const VerificationMeta(
     'paidFromAccountId',
   );
@@ -2390,6 +2401,7 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, BudgetItem> {
     kind,
     status,
     paidAt,
+    chargedAt,
     paidFromAccountId,
     dueDay,
     note,
@@ -2466,6 +2478,12 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, BudgetItem> {
       context.handle(
         _paidAtMeta,
         paidAt.isAcceptableOrUnknown(data['paid_at']!, _paidAtMeta),
+      );
+    }
+    if (data.containsKey('charged_at')) {
+      context.handle(
+        _chargedAtMeta,
+        chargedAt.isAcceptableOrUnknown(data['charged_at']!, _chargedAtMeta),
       );
     }
     if (data.containsKey('paid_from_account_id')) {
@@ -2561,6 +2579,10 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, BudgetItem> {
         DriftSqlType.dateTime,
         data['${effectivePrefix}paid_at'],
       ),
+      chargedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}charged_at'],
+      ),
       paidFromAccountId: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}paid_from_account_id'],
@@ -2608,6 +2630,9 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
   final ItemStatus status;
   final DateTime? paidAt;
 
+  /// When a credit-card expense was charged to the card.
+  final DateTime? chargedAt;
+
   /// Set when the item was paid from another account than planned (e.g.
   /// planned on the RCBC Card, paid from UB). Null means the planned one.
   final String? paidFromAccountId;
@@ -2627,6 +2652,7 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
     required this.kind,
     required this.status,
     this.paidAt,
+    this.chargedAt,
     this.paidFromAccountId,
     this.dueDay,
     this.note,
@@ -2660,6 +2686,9 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
     }
     if (!nullToAbsent || paidAt != null) {
       map['paid_at'] = Variable<DateTime>(paidAt);
+    }
+    if (!nullToAbsent || chargedAt != null) {
+      map['charged_at'] = Variable<DateTime>(chargedAt);
     }
     if (!nullToAbsent || paidFromAccountId != null) {
       map['paid_from_account_id'] = Variable<String>(paidFromAccountId);
@@ -2696,6 +2725,9 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
       paidAt: paidAt == null && nullToAbsent
           ? const Value.absent()
           : Value(paidAt),
+      chargedAt: chargedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(chargedAt),
       paidFromAccountId: paidFromAccountId == null && nullToAbsent
           ? const Value.absent()
           : Value(paidFromAccountId),
@@ -2729,6 +2761,7 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
         serializer.fromJson<String>(json['status']),
       ),
       paidAt: serializer.fromJson<DateTime?>(json['paidAt']),
+      chargedAt: serializer.fromJson<DateTime?>(json['chargedAt']),
       paidFromAccountId: serializer.fromJson<String?>(
         json['paidFromAccountId'],
       ),
@@ -2757,6 +2790,7 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
         $ItemsTable.$converterstatus.toJson(status),
       ),
       'paidAt': serializer.toJson<DateTime?>(paidAt),
+      'chargedAt': serializer.toJson<DateTime?>(chargedAt),
       'paidFromAccountId': serializer.toJson<String?>(paidFromAccountId),
       'dueDay': serializer.toJson<int?>(dueDay),
       'note': serializer.toJson<String?>(note),
@@ -2777,6 +2811,7 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
     ItemKind? kind,
     ItemStatus? status,
     Value<DateTime?> paidAt = const Value.absent(),
+    Value<DateTime?> chargedAt = const Value.absent(),
     Value<String?> paidFromAccountId = const Value.absent(),
     Value<int?> dueDay = const Value.absent(),
     Value<String?> note = const Value.absent(),
@@ -2794,6 +2829,7 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
     kind: kind ?? this.kind,
     status: status ?? this.status,
     paidAt: paidAt.present ? paidAt.value : this.paidAt,
+    chargedAt: chargedAt.present ? chargedAt.value : this.chargedAt,
     paidFromAccountId: paidFromAccountId.present
         ? paidFromAccountId.value
         : this.paidFromAccountId,
@@ -2817,6 +2853,7 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
       kind: data.kind.present ? data.kind.value : this.kind,
       status: data.status.present ? data.status.value : this.status,
       paidAt: data.paidAt.present ? data.paidAt.value : this.paidAt,
+      chargedAt: data.chargedAt.present ? data.chargedAt.value : this.chargedAt,
       paidFromAccountId: data.paidFromAccountId.present
           ? data.paidFromAccountId.value
           : this.paidFromAccountId,
@@ -2843,6 +2880,7 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
           ..write('kind: $kind, ')
           ..write('status: $status, ')
           ..write('paidAt: $paidAt, ')
+          ..write('chargedAt: $chargedAt, ')
           ..write('paidFromAccountId: $paidFromAccountId, ')
           ..write('dueDay: $dueDay, ')
           ..write('note: $note, ')
@@ -2865,6 +2903,7 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
     kind,
     status,
     paidAt,
+    chargedAt,
     paidFromAccountId,
     dueDay,
     note,
@@ -2886,6 +2925,7 @@ class BudgetItem extends DataClass implements Insertable<BudgetItem> {
           other.kind == this.kind &&
           other.status == this.status &&
           other.paidAt == this.paidAt &&
+          other.chargedAt == this.chargedAt &&
           other.paidFromAccountId == this.paidFromAccountId &&
           other.dueDay == this.dueDay &&
           other.note == this.note &&
@@ -2905,6 +2945,7 @@ class ItemsCompanion extends UpdateCompanion<BudgetItem> {
   final Value<ItemKind> kind;
   final Value<ItemStatus> status;
   final Value<DateTime?> paidAt;
+  final Value<DateTime?> chargedAt;
   final Value<String?> paidFromAccountId;
   final Value<int?> dueDay;
   final Value<String?> note;
@@ -2923,6 +2964,7 @@ class ItemsCompanion extends UpdateCompanion<BudgetItem> {
     this.kind = const Value.absent(),
     this.status = const Value.absent(),
     this.paidAt = const Value.absent(),
+    this.chargedAt = const Value.absent(),
     this.paidFromAccountId = const Value.absent(),
     this.dueDay = const Value.absent(),
     this.note = const Value.absent(),
@@ -2942,6 +2984,7 @@ class ItemsCompanion extends UpdateCompanion<BudgetItem> {
     this.kind = const Value.absent(),
     this.status = const Value.absent(),
     this.paidAt = const Value.absent(),
+    this.chargedAt = const Value.absent(),
     this.paidFromAccountId = const Value.absent(),
     this.dueDay = const Value.absent(),
     this.note = const Value.absent(),
@@ -2963,6 +3006,7 @@ class ItemsCompanion extends UpdateCompanion<BudgetItem> {
     Expression<String>? kind,
     Expression<String>? status,
     Expression<DateTime>? paidAt,
+    Expression<DateTime>? chargedAt,
     Expression<String>? paidFromAccountId,
     Expression<int>? dueDay,
     Expression<String>? note,
@@ -2982,6 +3026,7 @@ class ItemsCompanion extends UpdateCompanion<BudgetItem> {
       if (kind != null) 'kind': kind,
       if (status != null) 'status': status,
       if (paidAt != null) 'paid_at': paidAt,
+      if (chargedAt != null) 'charged_at': chargedAt,
       if (paidFromAccountId != null) 'paid_from_account_id': paidFromAccountId,
       if (dueDay != null) 'due_day': dueDay,
       if (note != null) 'note': note,
@@ -3003,6 +3048,7 @@ class ItemsCompanion extends UpdateCompanion<BudgetItem> {
     Value<ItemKind>? kind,
     Value<ItemStatus>? status,
     Value<DateTime?>? paidAt,
+    Value<DateTime?>? chargedAt,
     Value<String?>? paidFromAccountId,
     Value<int?>? dueDay,
     Value<String?>? note,
@@ -3022,6 +3068,7 @@ class ItemsCompanion extends UpdateCompanion<BudgetItem> {
       kind: kind ?? this.kind,
       status: status ?? this.status,
       paidAt: paidAt ?? this.paidAt,
+      chargedAt: chargedAt ?? this.chargedAt,
       paidFromAccountId: paidFromAccountId ?? this.paidFromAccountId,
       dueDay: dueDay ?? this.dueDay,
       note: note ?? this.note,
@@ -3071,6 +3118,9 @@ class ItemsCompanion extends UpdateCompanion<BudgetItem> {
     if (paidAt.present) {
       map['paid_at'] = Variable<DateTime>(paidAt.value);
     }
+    if (chargedAt.present) {
+      map['charged_at'] = Variable<DateTime>(chargedAt.value);
+    }
     if (paidFromAccountId.present) {
       map['paid_from_account_id'] = Variable<String>(paidFromAccountId.value);
     }
@@ -3106,6 +3156,7 @@ class ItemsCompanion extends UpdateCompanion<BudgetItem> {
           ..write('kind: $kind, ')
           ..write('status: $status, ')
           ..write('paidAt: $paidAt, ')
+          ..write('chargedAt: $chargedAt, ')
           ..write('paidFromAccountId: $paidFromAccountId, ')
           ..write('dueDay: $dueDay, ')
           ..write('note: $note, ')
@@ -6251,6 +6302,7 @@ typedef $$ItemsTableCreateCompanionBuilder = ItemsCompanion Function({
   Value<ItemKind> kind,
   Value<ItemStatus> status,
   Value<DateTime?> paidAt,
+  Value<DateTime?> chargedAt,
   Value<String?> paidFromAccountId,
   Value<int?> dueDay,
   Value<String?> note,
@@ -6270,6 +6322,7 @@ typedef $$ItemsTableUpdateCompanionBuilder = ItemsCompanion Function({
   Value<ItemKind> kind,
   Value<ItemStatus> status,
   Value<DateTime?> paidAt,
+  Value<DateTime?> chargedAt,
   Value<String?> paidFromAccountId,
   Value<int?> dueDay,
   Value<String?> note,
@@ -6398,6 +6451,11 @@ class $$ItemsTableFilterComposer extends Composer<_$AppDatabase, $ItemsTable> {
 
   ColumnFilters<DateTime> get paidAt => $composableBuilder(
     column: $table.paidAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get chargedAt => $composableBuilder(
+    column: $table.chargedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -6563,6 +6621,11 @@ class $$ItemsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<DateTime> get chargedAt => $composableBuilder(
+    column: $table.chargedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get dueDay => $composableBuilder(
     column: $table.dueDay,
     builder: (column) => ColumnOrderings(column),
@@ -6710,6 +6773,9 @@ class $$ItemsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get paidAt =>
       $composableBuilder(column: $table.paidAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get chargedAt =>
+      $composableBuilder(column: $table.chargedAt, builder: (column) => column);
 
   GeneratedColumn<int> get dueDay =>
       $composableBuilder(column: $table.dueDay, builder: (column) => column);
@@ -6862,6 +6928,7 @@ class $$ItemsTableTableManager
                 Value<ItemKind> kind = const Value.absent(),
                 Value<ItemStatus> status = const Value.absent(),
                 Value<DateTime?> paidAt = const Value.absent(),
+                Value<DateTime?> chargedAt = const Value.absent(),
                 Value<String?> paidFromAccountId = const Value.absent(),
                 Value<int?> dueDay = const Value.absent(),
                 Value<String?> note = const Value.absent(),
@@ -6880,6 +6947,7 @@ class $$ItemsTableTableManager
                 kind: kind,
                 status: status,
                 paidAt: paidAt,
+                chargedAt: chargedAt,
                 paidFromAccountId: paidFromAccountId,
                 dueDay: dueDay,
                 note: note,
@@ -6900,6 +6968,7 @@ class $$ItemsTableTableManager
                 Value<ItemKind> kind = const Value.absent(),
                 Value<ItemStatus> status = const Value.absent(),
                 Value<DateTime?> paidAt = const Value.absent(),
+                Value<DateTime?> chargedAt = const Value.absent(),
                 Value<String?> paidFromAccountId = const Value.absent(),
                 Value<int?> dueDay = const Value.absent(),
                 Value<String?> note = const Value.absent(),
@@ -6918,6 +6987,7 @@ class $$ItemsTableTableManager
                 kind: kind,
                 status: status,
                 paidAt: paidAt,
+                chargedAt: chargedAt,
                 paidFromAccountId: paidFromAccountId,
                 dueDay: dueDay,
                 note: note,

@@ -10,14 +10,17 @@ enum AccountType { cash, bank, ewallet, creditCard }
 /// from spending so reports don't treat them as expenses.
 enum ItemKind { expense, savings, debt }
 
-/// An expense moves forward through three states:
+/// An expense moves forward through these states:
 /// - planned: budgeted for the month, money not moved yet;
 /// - allotted: the money is in the account it will be paid from;
-/// - paid.
+/// - charged: bought on a credit card, the card bill not settled yet
+///   (credit-card expenses only);
+/// - paid (for a card: the bill was settled).
 /// Declared in that order, so `index` compares progress.
 enum ItemStatus {
   planned,
   allotted,
+  charged,
   paid;
 
   bool isBefore(ItemStatus other) => index < other.index;
@@ -99,6 +102,9 @@ class Items extends Table with SyncColumns {
   TextColumn get status =>
       textEnum<ItemStatus>().withDefault(Constant(ItemStatus.planned.name))();
   DateTimeColumn get paidAt => dateTime().nullable()();
+
+  /// When a credit-card expense was charged to the card.
+  DateTimeColumn get chargedAt => dateTime().nullable()();
 
   /// Set when the item was paid from another account than planned (e.g.
   /// planned on the RCBC Card, paid from UB). Null means the planned one.

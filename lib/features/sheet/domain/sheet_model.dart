@@ -253,6 +253,9 @@ SheetModel buildSheet({
     row('Unbudgeted', totals.unbudgetedCents, bold: true);
     row('Paid so far', totals.paidCents);
     row('To allot', totals.plannedCents);
+    if (totals.chargedCents > 0) {
+      row('Card bills to pay', totals.chargedCents);
+    }
     spacer();
     row('Left to pay', null, header: true);
     for (final a in shownAccounts) {
@@ -551,6 +554,13 @@ String? _paidTooltip(
     final from = paidFrom == null ? '' : ' from $paidFrom';
     return 'Paid ${_formatShortDate(item.paidAt!)}$from$progress';
   }
-  final label = item.status == ItemStatus.planned ? 'Planned' : 'Allotted';
+  final chargedAt = item.chargedAt;
+  final label = switch (item.status) {
+    ItemStatus.planned => 'Planned',
+    ItemStatus.charged when chargedAt != null =>
+      'Charged ${_formatShortDate(chargedAt)}',
+    ItemStatus.charged => 'Charged',
+    _ => 'Allotted',
+  };
   return '$label$progress';
 }

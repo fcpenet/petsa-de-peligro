@@ -59,12 +59,12 @@ void main() {
 
   testWidgets('the checkbox marks an item paid', (tester) async {
     await pumpApp(tester, db);
-    await tester.tap(find.byKey(ValueKey('paid-${ids.items['Electric']}')));
+    await tester.tap(find.byKey(ValueKey('paid-${ids.items['QR']}')));
     await tester.pumpAndSettle();
 
-    final electric = await repo.item(ids.items['Electric']!);
-    expect(electric.status, ItemStatus.paid);
-    expect(statText(tester, 'Left to pay'), '₱9,576.26');
+    final qr = await repo.item(ids.items['QR']!);
+    expect(qr.status, ItemStatus.paid);
+    expect(statText(tester, 'Left to pay'), '₱15,296.26');
     await closeApp(tester, db);
   });
 

@@ -350,6 +350,6 @@ void main() {
     final version = await legacy
         .customSelect('PRAGMA user_version')
         .getSingle();
-    expect(version.data.values.single, 5);
+    expect(version.data.values.single, 6);
   });
 }

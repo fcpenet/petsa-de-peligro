@@ -120,9 +120,11 @@ void main() {
           tester.widget<Text>(find.byKey(Key(key))).data!;
       expect(figure('figure-Credit cards-On card'), '₱9,549.00');
       expect(figure('figure-Credit cards-Settled'), '₱3,549.00');
-      expect(figure('figure-Credit cards-To settle'), '₱6,000.00');
+      // Electric (RCBC) is planned, not charged yet.
+      expect(figure('figure-Credit cards-To settle'), '₱0.00');
+      expect(figure('figure-Credit cards-Not charged yet'), '₱6,000.00');
       expect(figure('figure-Accounts-Left to pay'), '₱9,576.26');
-      expect(find.text('₱6,000.00 to settle'), findsOneWidget); // RCBC
+      expect(find.text('Nothing charged yet'), findsOneWidget); // RCBC
       expect(find.text('All settled'), findsOneWidget); // JCB
       await closeApp(tester, db);
     });
@@ -140,7 +142,7 @@ void main() {
         find.byKey(ValueKey('summary-item-${ids.items['UB Loan']}')),
         findsOneWidget,
       );
-      expect(find.text('Allotted'), findsNWidgets(2));
+      expect(find.text('Allotted · no due day'), findsNWidgets(2));
       await closeApp(tester, db);
     });
 
