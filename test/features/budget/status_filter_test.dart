@@ -91,16 +91,17 @@ void main() {
       expect(find.text('Planned 3'), findsOneWidget); // Electric, QR, sleeve
       expect(find.text('Allotted 2'), findsOneWidget);
       expect(find.text('Paid 4'), findsOneWidget);
-      expect(find.text('Unpaid 5'), findsOneWidget);
+      expect(find.text('Unpaid 3'), findsOneWidget); // allotted left out
       expect(find.byKey(const Key('filter-summary')), findsNothing);
       final left = tester
           .widget<Text>(find.byKey(const Key('stat-Left to pay')))
           .data;
 
-      // Unpaid: only what's still to pay.
+      // Unpaid: planned and charged, not allotted or paid.
       await tester.tap(find.byKey(const Key('filter-unpaid')));
       await tester.pumpAndSettle();
       expect(row('Basic'), findsNothing);
+      expect(row('UB Loan'), findsNothing); // allotted
       expect(row('Electric'), findsOneWidget);
       expect(row('dental pliers'), findsNothing); // paid sub-expense
       expect(row('sleeve'), findsOneWidget); // its planned sibling

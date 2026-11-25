@@ -984,7 +984,7 @@ class _CollectionBlock extends StatelessWidget {
 
 /// Planned / Allotted / Paid chips that narrow the list.
 /// Pinned under the app bar: what's left to pay, and a filter that shows
-/// only the expenses with one status (or everything not paid yet).
+/// only the expenses with one status (or Unpaid: planned and charged).
 class _LeftToPayBar extends StatelessWidget {
   const _LeftToPayBar({
     required this.leftCents,
@@ -1010,11 +1010,9 @@ class _LeftToPayBar extends StatelessWidget {
 
   static final options = <(String, String, Set<ItemStatus>)>[
     ('all', 'All', ItemStatus.values.toSet()),
-    (
-      'unpaid',
-      'Unpaid',
-      {ItemStatus.planned, ItemStatus.allotted, ItemStatus.charged},
-    ),
+    // Not paid and no money set aside: allotted expenses are covered, so
+    // they're left out.
+    ('unpaid', 'Unpaid', {ItemStatus.planned, ItemStatus.charged}),
     ('planned', 'Planned', {ItemStatus.planned}),
     ('allotted', 'Allotted', {ItemStatus.allotted}),
     ('charged', 'Charged', {ItemStatus.charged}),
