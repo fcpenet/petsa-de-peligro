@@ -110,6 +110,9 @@ DateTime itemDate(BudgetItem item, String yearMonth) {
 /// Inclusive range of days.
 typedef DayRange = ({DateTime from, DateTime to});
 
+/// Whether [day] (a date without time) is inside [range].
+bool isInRange(DateTime day, DayRange range) => _inRange(day, range);
+
 bool _inRange(DateTime day, DayRange range) =>
     !day.isBefore(range.from) && !day.isAfter(range.to);
 

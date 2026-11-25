@@ -656,6 +656,59 @@ class BudgetRepository {
     );
   }
 
+  // ----------------------------------------------------------- month spans
+
+  /// Items of the months from [fromYm] to [toYm] ('YYYY-MM'), each with its
+  /// month. One query for the whole span.
+  Selectable<(BudgetItem, String)> _spanItemsQuery(String fromYm, String toYm) {
+    final i = _db.items;
+    final m = _db.months;
+    final query = _db.select(i).join([innerJoin(m, m.id.equalsExp(i.monthId))])
+      ..where(i.deletedAt.isNull() & m.yearMonth.isBetweenValues(fromYm, toYm));
+    return query.map((row) => (row.readTable(i), row.read(m.yearMonth)!));
+  }
+
+  Stream<List<(BudgetItem, String)>> watchItemsInMonths(
+    String fromYm,
+    String toYm,
+  ) => _spanItemsQuery(fromYm, toYm).watch();
+
+  /// Live incomes of the months from [fromYm] to [toYm], with their month.
+  Stream<List<(Income, String)>> watchIncomesInMonths(
+    String fromYm,
+    String toYm,
+  ) {
+    final i = _db.incomes;
+    final m = _db.months;
+    final query = _db.select(i).join([innerJoin(m, m.id.equalsExp(i.monthId))])
+      ..where(i.deletedAt.isNull() & m.yearMonth.isBetweenValues(fromYm, toYm));
+    return query
+        .map((row) => (row.readTable(i), row.read(m.yearMonth)!))
+        .watch();
+  }
+
+  /// Top-ups of live incomes in the months from [fromYm] to [toYm].
+  Stream<List<(TopUp, String)>> watchTopUpsInMonths(
+    String fromYm,
+    String toYm,
+  ) {
+    final t = _db.incomeTopUps;
+    final i = _db.incomes;
+    final m = _db.months;
+    final query =
+        _db.select(t).join([
+          innerJoin(i, i.id.equalsExp(t.incomeId)),
+          innerJoin(m, m.id.equalsExp(i.monthId)),
+        ])..where(
+          t.deletedAt.isNull() &
+              i.deletedAt.isNull() &
+              m.yearMonth.isBetweenValues(fromYm, toYm),
+        );
+    return query
+        .map((row) => (row.readTable(t), row.read(m.yearMonth)!))
+        .watch();
+  }
+
   // ------------------------------------------------------------- date range
 
   /// Expenses that can fall between [from] and [to] (inclusive days), from

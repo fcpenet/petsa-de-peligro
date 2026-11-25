@@ -28,13 +28,13 @@ void main() {
     await closeApp(tester, db);
   });
 
-  testWidgets('switching to Overview keeps the month', (tester) async {
+  testWidgets('switching to Charts keeps the month', (tester) async {
     final router = await pumpApp(tester, db, location: '/budget/2026-10');
-    await tester.tap(find.byKey(const Key('nav-overview')));
+    await tester.tap(find.byKey(const Key('nav-charts')));
     await tester.pumpAndSettle();
     expect(
       router.routerDelegate.currentConfiguration.uri.path,
-      '/overview/2026-10',
+      '/charts/2026-10',
     );
     expect(find.text('October 2026'), findsOneWidget);
 
@@ -45,6 +45,15 @@ void main() {
     await tester.tap(find.byKey(const Key('nav-budget')));
     await tester.pumpAndSettle();
     expect(find.text('November 2026'), findsOneWidget); // current month
+    await closeApp(tester, db);
+  });
+
+  testWidgets('old Overview links go to Charts', (tester) async {
+    final router = await pumpApp(tester, db, location: '/overview/2026-10');
+    expect(
+      router.routerDelegate.currentConfiguration.uri.path,
+      '/charts/2026-10',
+    );
     await closeApp(tester, db);
   });
 

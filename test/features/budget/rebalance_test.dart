@@ -1,9 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:petsa/core/db/database.dart';
-import 'package:petsa/features/accounts/data/account_repository.dart';
 import 'package:petsa/features/budget/data/budget_repository.dart';
-import 'package:petsa/features/sheet/domain/sheet_model.dart';
 
 import '../../helpers/app_harness.dart';
 import '../../helpers/november.dart';
@@ -179,42 +177,5 @@ void main() {
     await tapKey(tester, ValueKey('move-$rcbc-$ub'));
     expect(await repo.transfersFor(ids.monthId), hasLength(1));
     await closeApp(tester, db);
-  });
-
-  group('Overview', () {
-    tearDown(() => db.close());
-
-    Future<SheetModel> build() async => buildSheet(
-      accounts: await AccountRepository(db).accounts(),
-      items: await repo.itemsFor(ids.monthId),
-      incomes: await repo.incomesFor(ids.monthId),
-      transfers: await repo.transfersFor(ids.monthId),
-    );
-
-    test('shows where it was paid and what to move', () async {
-      await repo.setStatus(
-        electric,
-        ItemStatus.paid,
-        paidAt: DateTime(2026, 11, 16),
-        paidFromAccountId: ub,
-      );
-      var model = await build();
-      final box = model.find(
-        (c) => c.field == CellField.itemStatus && c.itemId == electric,
-      )!;
-      expect(model.cell(box.$1, box.$2).tooltip, 'Paid Nov 16, 2026 from UB');
-      final label = model.find((c) => c.text == 'RCBC Card → UB')!;
-      expect(model.cell(label.$1, label.$2 + 1).cents, 600000);
-
-      await repo.addTransfer(
-        monthId: ids.monthId,
-        fromAccountId: rcbc,
-        toAccountId: ub,
-        amountCents: 600000,
-        transferredAt: DateTime(2026, 11, 17),
-      );
-      model = await build();
-      expect(model.find((c) => c.text == 'Rebalance'), isNull);
-    });
   });
 }

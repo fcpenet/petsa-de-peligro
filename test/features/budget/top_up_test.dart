@@ -5,10 +5,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:petsa/core/db/database.dart';
-import 'package:petsa/features/accounts/data/account_repository.dart';
 import 'package:petsa/features/budget/data/budget_repository.dart';
 import 'package:petsa/features/budget/domain/budget_calculator.dart';
-import 'package:petsa/features/sheet/domain/sheet_model.dart';
 import 'package:petsa/features/templates/data/template_repository.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
@@ -133,26 +131,6 @@ void main() {
       final totals = await repo.totalsFor(december);
       expect(totals.incomeCents, php(242122.23));
       expect(totals.receivedCents, 0);
-    });
-
-    test('the Overview shows received next to expected', () async {
-      await repo.addTopUp(
-        incomeId: ids.salary,
-        amountCents: php(5000),
-        receivedAt: DateTime(2026, 11, 15),
-      );
-      final model = buildSheet(
-        accounts: await AccountRepository(db).accounts(),
-        items: await repo.itemsFor(ids.monthId),
-        incomes: await repo.incomesFor(ids.monthId),
-        topUps: await repo.topUpsFor(ids.monthId),
-      );
-      final pos = model.find(
-        (c) => c.field == CellField.incomeReceived && c.incomeId == ids.salary,
-      )!;
-      expect(model.cell(pos.$1, pos.$2).cents, php(5000));
-      final label = model.find((c) => c.text == 'Salary received')!;
-      expect(model.cell(label.$1, label.$2 + 1).cents, php(5000));
     });
   });
 

@@ -1,9 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:petsa/core/db/database.dart';
-import 'package:petsa/features/accounts/data/account_repository.dart';
 import 'package:petsa/features/budget/data/budget_repository.dart';
-import 'package:petsa/features/sheet/domain/sheet_model.dart';
 
 import '../../helpers/app_harness.dart';
 import '../../helpers/november.dart';
@@ -92,22 +90,5 @@ void main() {
         .singleWhere((i) => i.name == 'Water');
     expect(water.status, ItemStatus.planned);
     await closeApp(tester, db);
-  });
-
-  test('the Overview shows what is left to allot', () async {
-    addTearDown(db.close);
-    await repo.allotAccount(ids.monthId, ids.accounts['UB']!);
-    final model = buildSheet(
-      accounts: await AccountRepository(db).accounts(),
-      items: await repo.itemsFor(ids.monthId),
-      incomes: await repo.incomesFor(ids.monthId),
-    );
-    final label = model.find((c) => c.text == 'To allot')!;
-    expect(model.cell(label.$1, label.$2 + 1).cents, 657626);
-    final loan = model.find(
-      (c) =>
-          c.field == CellField.itemStatus && c.itemId == ids.items['UB Loan'],
-    )!;
-    expect(model.cell(loan.$1, loan.$2).tooltip, 'Allotted');
   });
 }

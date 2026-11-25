@@ -93,3 +93,27 @@ final rangeTransfersProvider = StreamProvider.family<List<Transfer>, DayRange>(
       .watch(budgetRepositoryProvider)
       .watchTransfersBetween(range.from, range.to),
 );
+
+/// A span of months, 'YYYY-MM' to 'YYYY-MM' inclusive.
+typedef MonthSpan = ({String from, String to});
+
+final spanItemsProvider =
+    StreamProvider.family<List<(BudgetItem, String)>, MonthSpan>(
+      (ref, span) => ref
+          .watch(budgetRepositoryProvider)
+          .watchItemsInMonths(span.from, span.to),
+    );
+
+final spanIncomesProvider =
+    StreamProvider.family<List<(Income, String)>, MonthSpan>(
+      (ref, span) => ref
+          .watch(budgetRepositoryProvider)
+          .watchIncomesInMonths(span.from, span.to),
+    );
+
+final spanTopUpsProvider =
+    StreamProvider.family<List<(TopUp, String)>, MonthSpan>(
+      (ref, span) => ref
+          .watch(budgetRepositoryProvider)
+          .watchTopUpsInMonths(span.from, span.to),
+    );

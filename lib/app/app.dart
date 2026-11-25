@@ -7,7 +7,7 @@ import '../core/ui/adaptive.dart';
 import '../features/accounts/ui/accounts_page.dart';
 import '../features/budget/data/budget_repository.dart';
 import '../features/budget/ui/budget_page.dart';
-import '../features/sheet/ui/overview_page.dart';
+import '../features/charts/ui/charts_page.dart';
 import '../features/summary/domain/account_summary.dart' show DayRange;
 import '../features/summary/ui/summary_page.dart';
 import '../features/templates/ui/template_editor_page.dart';
@@ -58,11 +58,23 @@ GoRouter buildRouter({DateTime Function() clock = DateTime.now}) {
             builder: (_, state) =>
                 SummaryPage(yearMonth: state.pathParameters['month']!),
           ),
+          // Before '/charts/:month' so 'range' isn't taken for a month.
+          GoRoute(
+            path: '/charts/range',
+            redirect: (_, state) =>
+                _parseRange(state) == null ? '/charts/${currentMonth()}' : null,
+            builder: (_, state) => ChartsPage.range(range: _parseRange(state)!),
+          ),
+          GoRoute(
+            path: '/charts/:month',
+            redirect: (_, state) => validMonth(state, 'charts'),
+            builder: (_, state) =>
+                ChartsPage(yearMonth: state.pathParameters['month']!),
+          ),
+          // Old Overview links.
           GoRoute(
             path: '/overview/:month',
-            redirect: (_, state) => validMonth(state, 'overview'),
-            builder: (_, state) =>
-                OverviewPage(yearMonth: state.pathParameters['month']!),
+            redirect: (_, state) => '/charts/${state.pathParameters['month']}',
           ),
           GoRoute(
             path: '/templates',
@@ -133,7 +145,7 @@ class AppShell extends StatelessWidget {
   static const List<NavDestination> _destinations = [
     (icon: Icons.receipt_long, label: 'Budget', path: 'budget'),
     (icon: Icons.insights_outlined, label: 'Summary', path: 'summary'),
-    (icon: Icons.table_chart_outlined, label: 'Overview', path: 'overview'),
+    (icon: Icons.pie_chart_outline, label: 'Charts', path: 'charts'),
     (icon: Icons.copy_all, label: 'Templates', path: 'templates'),
     (icon: Icons.account_balance_outlined, label: 'Accounts', path: 'accounts'),
   ];
@@ -145,7 +157,7 @@ class AppShell extends StatelessWidget {
     return i < 0 ? 0 : i;
   }
 
-  /// Keeps the month when switching between Budget, Summary and Overview.
+  /// Keeps the month when switching between Budget, Summary and Charts.
   /// (Nested template routes like /templates/new aren't months, which the
   /// year-month check below rejects.)
   String _monthFromLocation() {
