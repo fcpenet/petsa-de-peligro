@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:petsa/core/db/database.dart';
+import 'package:petsa/features/budget/data/budget_repository.dart';
 
 import '../../helpers/app_harness.dart';
 import '../../helpers/november.dart';
@@ -70,6 +72,49 @@ void main() {
     await tester.pumpAndSettle();
     expect(inCard('where-legend', find.text('Expenses')), findsOneWidget);
     expect(inCard('where-legend', find.text('100%')), findsOneWidget);
+    await closeApp(tester, db);
+  });
+
+  testWidgets('month by month shows expected and actual income', (
+    tester,
+  ) async {
+    await BudgetRepository(db).addTopUp(
+      incomeId: ids.salary,
+      amountCents: php(100000),
+      receivedAt: DateTime(2026, 11, 15),
+    );
+    await pumpApp(tester, db, location: '/charts/2026-11');
+    for (final label in [
+      'Budgeted',
+      'Paid',
+      'Expected income',
+      'Actual income',
+    ]) {
+      expect(inCard('trend-legend', find.text(label)), findsOneWidget);
+    }
+    final november = tester
+        .widget<BarChart>(find.byKey(const Key('trend-bars')))
+        .data
+        .barGroups
+        .last;
+    final [expenses, income] = november.barRods;
+    // The bar is the plan; the solid part from the bottom is what happened.
+    expect(expenses.toY, 53480); // as on the Budget page
+    expect(expenses.rodStackItems.single.toY, 36549);
+    expect(income.toY, 242122.23);
+    expect(income.rodStackItems.single.toY, 100000);
+
+    await tester.tap(find.byKey(const Key('trend-table')));
+    await tester.pumpAndSettle();
+    final table = find.byKey(const Key('trend-table-view'));
+    expect(
+      find.descendant(of: table, matching: find.text('Actual')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: table, matching: find.text('₱100,000.00')),
+      findsOneWidget,
+    );
     await closeApp(tester, db);
   });
 

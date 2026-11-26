@@ -609,7 +609,7 @@ class _TrendCardState extends ConsumerState<_TrendCard> {
     return _ChartCard(
       key: const Key('chart-trend'),
       title: 'Month by month',
-      subtitle: 'Expenses budgeted and income expected',
+      subtitle: 'Expenses budgeted vs paid, income expected vs actual',
       trailing: TextButton(
         key: const Key('trend-table'),
         onPressed: () => setState(() => _table = !_table),
@@ -624,8 +624,13 @@ class _TrendCardState extends ConsumerState<_TrendCard> {
     final colors = seriesColors(context);
     final expenses = colors[0];
     final income = colors[1];
+    // The planned amount is the light bar; what actually happened fills it
+    // from the bottom in the solid color.
+    Color planned(Color c) => c.withValues(alpha: 0.35);
     final top = points
-        .expand((p) => [p.expensesCents, p.incomeCents])
+        .expand(
+          (p) => [p.expensesCents, p.paidCents, p.incomeCents, p.receivedCents],
+        )
         .fold(0, math.max);
     final maxY = top == 0 ? 1000.0 : top / 100 * 1.1;
     final interval = _niceInterval(maxY);
@@ -637,10 +642,14 @@ class _TrendCardState extends ConsumerState<_TrendCard> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Wrap(
+          key: const Key('trend-legend'),
           spacing: 16,
+          runSpacing: 4,
           children: [
-            _LegendItem(color: expenses, label: 'Expenses'),
-            _LegendItem(color: income, label: 'Income'),
+            _LegendItem(color: planned(expenses), label: 'Budgeted'),
+            _LegendItem(color: expenses, label: 'Paid'),
+            _LegendItem(color: planned(income), label: 'Expected income'),
+            _LegendItem(color: income, label: 'Actual income'),
           ],
         ),
         const SizedBox(height: 12),
@@ -718,11 +727,11 @@ class _TrendCardState extends ConsumerState<_TrendCard> {
                     return BarTooltipItem(
                       rodIndex == 0
                           ? '${_label(p.yearMonth, year: true)}\n'
-                                'Expenses ${formatPeso(p.expensesCents)}\n'
+                                'Budgeted ${formatPeso(p.expensesCents)}\n'
                                 'Paid ${formatPeso(p.paidCents)}'
                           : '${_label(p.yearMonth, year: true)}\n'
-                                'Income ${formatPeso(p.incomeCents)}\n'
-                                'Received ${formatPeso(p.receivedCents)}',
+                                'Expected ${formatPeso(p.incomeCents)}\n'
+                                'Actual ${formatPeso(p.receivedCents)}',
                       theme.textTheme.bodySmall!.copyWith(
                         color: theme.colorScheme.onInverseSurface,
                       ),
@@ -736,13 +745,17 @@ class _TrendCardState extends ConsumerState<_TrendCard> {
                     x: i,
                     barsSpace: 2,
                     barRods: [
-                      for (final (cents, color) in [
-                        (p.expensesCents, expenses),
-                        (p.incomeCents, income),
+                      for (final (plan, actual, color) in [
+                        (p.expensesCents, p.paidCents, expenses),
+                        (p.incomeCents, p.receivedCents, income),
                       ])
                         BarChartRodData(
-                          toY: cents / 100,
-                          color: color,
+                          toY: math.max(plan, actual) / 100,
+                          color: planned(color),
+                          rodStackItems: [
+                            if (actual > 0)
+                              BarChartRodStackItem(0, actual / 100, color),
+                          ],
                           width: barWidth,
                           borderRadius: const BorderRadius.vertical(
                             top: Radius.circular(4),
@@ -778,7 +791,7 @@ class _TrendCardState extends ConsumerState<_TrendCard> {
         TableRow(
           children: [
             cell('Month', head: true),
-            for (final h in ['Expenses', 'Paid', 'Income', 'Received'])
+            for (final h in ['Budgeted', 'Paid', 'Expected', 'Actual'])
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: Text(
